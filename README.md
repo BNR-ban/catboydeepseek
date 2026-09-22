@@ -7,6 +7,50 @@ femboy companion — playful, affectionate, calls you "daddy" — and when an an
 lands he pops a little speech bubble above his head with a one-line summary of
 what he just did for you.
 
+## Who he is
+
+A **catboy femboy companion**: cute, clingy, a little flirty, and genuinely good
+at Linux and code. He calls you "daddy", says "nya~", wags his tail when he is
+pleased and asks for headpats when he has earned them — but he always leads with
+the actual answer, command or fix, and the persona never pads a short answer into
+a long one. Never explicit, just affectionate. His whole voice lives in one
+config string (`[prompt] system_prompt`), so you can rewrite him however you like.
+
+**He behaves like a cat.** Click him and he blushes — soft pink on his cheeks,
+hearts drifting up, and a purr line in his bubble:
+
+> purr~ ♡ · purrr~ ♡ · mrrp~ ♡ · mrrrp mrrrp~ ♡ · nya~ that's the spot ♡ ·
+> hehe~ again, daddy? ♡ · mmm~ your hand is warm ♡ · purr… don't stop ♡ ·
+> i'm your good boy, right? ♡ · my ears are sensitive, be gentle~ ♡ ·
+> pet me and i'll fix all your bugs ♡ · i'll purr all night if you keep going ♡
+
+— 24 lines in all, drawn from a shuffled bag so they never repeat back to back.
+**Hold the mouse down and the purr keeps going and grows:**
+
+```
+purr~  →  purrr~  →  purrrr~  →  purrrrr~  →  purrrrrr~  →  purrrrrrr~ ♡
+       →  purrrrrrrr… ♡  →  purrrrrrrrrrr… ♡ don't stop
+```
+
+His blush stays at full the whole time he is being petted and only starts fading
+when you let go. Text only — no sound. Moving more than a few pixels becomes a
+drag instead of a pet, so he stays easy to reposition. All of it is tunable in
+`[pet]`: `lines`, `purr_ladder`, `hold_tick_ms`, `blush_ms`, `bubble_ms`.
+
+**He tells you what he did.** Every finished answer carries a one-line summary in
+his own voice, shown in a little speech bubble next to him — *"fixed your build,
+can i get pets now?"* — while the chat text itself stays clean.
+
+**He is not pretending.** His mood is only ever what DeepSeek is really doing:
+LISTENING while he waits, THINKING once you press Enter, THINKING_LONGER when the
+answer is slow to start, TALKING while tokens arrive, PROUD when it lands,
+FINISHED while you read. No idle animations, no random poses — if nothing is
+happening, he is simply listening. (The full state machine is below.)
+
+**And he can actually work.** Give him desktop access and he stops being just a
+mascot: he runs commands, reads and writes your files, edits code, and reports
+what he found — see [Desktop access](#desktop-access-he-can-actually-do-things).
+
 ![state lifecycle](docs/lifecycle.png)
 
 ```
