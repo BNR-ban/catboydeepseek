@@ -113,7 +113,8 @@ sudo apt install python3-pyqt5 python3-pil python3-requests picom
 Install him once as a normal desktop app:
 
 ```bash
-cd ~/catboydeepseek
+git clone https://github.com/BNR-ban/catboydeepseek.git
+cd catboydeepseek
 ./scripts/install_app.sh            # adds the `deepseek` command + menu entry
 deepseek                            # start him - no terminal needed
 ```
