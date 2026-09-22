@@ -35,6 +35,21 @@ now?"* — and fades out on its own after `bubble.duration_ms`.
 
 ---
 
+## In use
+
+|  |  |
+|---|---|
+| ![asking a question](docs/inuse-1-chat.png) | ![doing the work](docs/inuse-2-agent.png) |
+| Asking something and reading the answer — the one-line summary lands in the bubble above him | Letting him do the work: `full` desktop access, every command logged in the transcript |
+| ![attaching files](docs/inuse-3-files.png) | ![petting](docs/petting.png) |
+| Files dropped on him ride along with the message (`📎 2 attached`) | Petting him: blush, hearts and a purr line — no sound |
+
+Every screenshot is a real capture from a live desktop: the see-through parts
+really are see-through, and the tool lines (`▸ $ …`, `▸ ✓ …`) are what actually
+ran.
+
+---
+
 ## Requirements
 
 * Linux with X11 (bspwm, i3, …) — Wayland works with the limitations listed below
