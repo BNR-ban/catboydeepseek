@@ -1,4 +1,9 @@
-"""Optional XDG autostart entry (never installed unless the user asks)."""
+"""Optional autostart entries, per platform (never installed unless asked).
+
+* Linux   - an XDG .desktop file in ~/.config/autostart
+* Windows - a launcher script in the user's Startup folder
+* macOS   - a LaunchAgent plist in ~/Library/LaunchAgents
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,8 @@ import os
 import shlex
 import sys
 from pathlib import Path
+
+from . import desktop
 
 
 DESKTOP_TEMPLATE = """[Desktop Entry]
@@ -43,23 +50,70 @@ fi
 
 
 def autostart_path() -> Path:
+    if desktop.WINDOWS:
+        appdata = os.environ.get("APPDATA") or "~/AppData/Roaming"
+        return (Path(appdata).expanduser() / "Microsoft" / "Windows" / "Start Menu"
+                / "Programs" / "Startup" / "DeepSeek.cmd")
+    if desktop.MACOS:
+        return Path("~/Library/LaunchAgents/com.deepseek.companion.plist").expanduser()
     base = os.environ.get("XDG_CONFIG_HOME") or "~/.config"
     return Path(base).expanduser() / "autostart" / "deepseek.desktop"
 
 
 def applications_path() -> Path:
+    if desktop.WINDOWS:
+        appdata = os.environ.get("APPDATA") or "~/AppData/Roaming"
+        return (Path(appdata).expanduser() / "Microsoft" / "Windows" / "Start Menu"
+                / "Programs" / "DeepSeek.lnk")
+    if desktop.MACOS:
+        return Path("~/Applications/DeepSeek.command").expanduser()
     base = os.environ.get("XDG_DATA_HOME") or "~/.local/share"
     return Path(base).expanduser() / "applications" / "deepseek.desktop"
 
 
 def launcher_path() -> Path:
-    """~/.local/bin/deepseek - the command that launches the app."""
-    base = os.environ.get("XDG_BIN_HOME") or "~/.local/bin"
-    return Path(base).expanduser() / "deepseek"
+    """The `deepseek` command (or deepseek.cmd on Windows)."""
+    base = os.environ.get("XDG_BIN_HOME")
+    directory = Path(base).expanduser() if base else desktop.launcher_dir()
+    return directory / ("deepseek.cmd" if desktop.WINDOWS else "deepseek")
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
+
+
+LAUNCHER_TEMPLATE_WINDOWS = """@echo off
+rem DeepSeek companion launcher (Windows)
+rem   deepseek            start him detached (no console window stays open)
+rem   deepseek --toggle   show/hide the running companion
+setlocal
+set PROJECT={project}
+if not "%~1"=="" (
+  "%PYTHON%" -m dscompanion %*
+  goto :eof
+)
+start "" /b "%PYTHON%" -m dscompanion
+"""
+
+PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.deepseek.companion</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{python}</string>
+    <string>-m</string>
+    <string>dscompanion</string>
+    {extra}
+  </array>
+  <key>WorkingDirectory</key><string>{project}</string>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+</dict>
+</plist>
+"""
 
 
 def exec_line() -> str:
@@ -73,6 +127,11 @@ def exec_line() -> str:
 
 
 def install(*, also_menu_entry: bool = True, minimized: bool = True) -> Path:
+    """Write the autostart entry for this platform."""
+    if desktop.WINDOWS:
+        return _install_windows(minimized)
+    if desktop.MACOS:
+        return _install_macos(minimized)
     icon = _project_root() / "assets" / "character" / "listening.png"
     entry = DESKTOP_TEMPLATE.format(
         exec_line=f"{exec_line()} --start-hidden" if minimized else exec_line(),
@@ -98,6 +157,25 @@ def install_launcher() -> Path:
     """Write the `deepseek` command so the app starts like any other program."""
     target = launcher_path()
     target.parent.mkdir(parents=True, exist_ok=True)
+    if desktop.WINDOWS:
+        target.write_text(
+            LAUNCHER_TEMPLATE_WINDOWS.format(
+                project=_project_root(), **{"PYTHON": sys.executable or "python"}
+            ),
+            encoding="utf-8",
+        )
+        return target
+    if desktop.MACOS:
+        target.write_text(
+            "#!/bin/bash\n"
+            f'cd "{_project_root()}"\n'
+            'if [ $# -gt 0 ]; then exec ./run.sh "$@"; fi\n'
+            f'nohup "{sys.executable or "python3"}" -m dscompanion '
+            '>/dev/null 2>&1 &\n',
+            encoding="utf-8",
+        )
+        target.chmod(0o755)
+        return target
     target.write_text(
         LAUNCHER_TEMPLATE.format(project=_project_root()), encoding="utf-8"
     )
@@ -123,3 +201,36 @@ def uninstall_launcher() -> None:
 def is_installed() -> bool:
     return autostart_path().exists()
 
+
+def _install_windows(minimized: bool) -> Path:
+    """A .cmd in the Startup folder (no console window, no shortcut plumbing)."""
+    launcher = install_launcher()
+    target = autostart_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "@echo off\r\n"
+        "rem DeepSeek companion - start hidden with the session\r\n"
+        f'call "{launcher}"' + (" --start-hidden\r\n" if minimized else "\r\n"),
+        encoding="utf-8",
+    )
+    return target
+
+
+def _install_macos(minimized: bool) -> Path:
+    target = autostart_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    extra = "    <string>--start-hidden</string>" if minimized else ""
+    target.write_text(
+        PLIST_TEMPLATE.format(
+            python=sys.executable or "/usr/bin/python3",
+            project=_project_root(),
+            extra=extra,
+        ),
+        encoding="utf-8",
+    )
+    return target
+
+
+def start_hidden_supported() -> bool:
+    """--start-hidden works everywhere; only the launch mechanism differs."""
+    return True

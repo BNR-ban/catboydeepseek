@@ -20,12 +20,19 @@ import random
 import signal
 from pathlib import Path
 
-import fcntl
+try:  # POSIX
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None
 
 from PyQt5.QtCore import QObject, QSocketNotifier, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QAction, QActionGroup, QApplication, QMenu
 
-from . import autostart, x11
+from . import autostart
 from .agent import AgentWorker, has_tool_markup, strip_tool_markup
 from .api import APIError, ChatMessage, DeepSeekClient, first_sentence
 from .assets import AssetError, load_assets
@@ -103,7 +110,12 @@ class SignalBridge(QObject):
 
 
 def instance_path() -> Path:
-    """Where the running companion advertises its pid."""
+    """Where the running companion advertises its pid (per platform)."""
+    from . import desktop
+
+    if desktop.WINDOWS:
+        base = os.environ.get("TEMP") or os.environ.get("TMP") or "."
+        return Path(base) / "deepseek-companion.pid"
     base = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
     return Path(base) / f"deepseek-companion-{os.getuid()}.pid"
 
@@ -117,7 +129,10 @@ def acquire_instance_lock() -> bool:
     path = instance_path()
     try:
         fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        elif msvcrt is not None:  # pragma: no cover - Windows
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
     except OSError:
         return False
     os.ftruncate(fd, 0)
@@ -133,7 +148,13 @@ def signal_running_instance() -> bool:
     except (OSError, ValueError):
         return False
     try:
-        os.kill(pid, signal.SIGUSR1)
+        if hasattr(signal, "SIGUSR1"):
+            os.kill(pid, signal.SIGUSR1)
+        elif os.name == "nt":  # pragma: no cover - Windows has no SIGUSR1
+            # the app also watches its own pid file's mtime for a toggle request
+            Path(instance_path()).with_suffix(".toggle").write_text("toggle")
+        else:
+            return False
     except OSError:
         return False
     return True
@@ -229,18 +250,12 @@ class Companion(QObject):
                     self.config.get("hotkeys.toggle_click_through", "")
                 ),
             }
-        if x11.is_x11():
-            if not self.hotkeys.register(bindings):
-                print(f"[hotkeys] unavailable: {self.hotkeys.error}")
-            else:
-                self.hotkeys.triggered.connect(self._on_hotkey)
-                if self.hotkeys.error:
-                    print(f"[hotkeys] partial: {self.hotkeys.error}")
+        if not self.hotkeys.register(bindings):
+            print(f"[hotkeys] unavailable: {self.hotkeys.error}")
         else:
-            print(
-                "[hotkeys] global hotkeys need X11; on Wayland use your compositor's "
-                "own shortcut to run 'run.sh --toggle'"
-            )
+            self.hotkeys.triggered.connect(self._on_hotkey)
+            if self.hotkeys.error:
+                print(f"[hotkeys] partial: {self.hotkeys.error}")
 
         self.app.aboutToQuit.connect(self.shutdown)
 
@@ -1025,21 +1040,41 @@ def run_app(argv: list[str] | None = None) -> int:
 
     # Signals arrive through the event loop (see SignalBridge): SIGTERM/SIGINT
     # quit cleanly (saving the config), SIGUSR1 is what `run.sh --toggle` sends.
-    bridge = SignalBridge(
-        (signal.SIGTERM, signal.SIGINT, signal.SIGUSR1, signal.SIGHUP), companion
-    )
+    # Windows only has SIGINT/SIGTERM (and SIGBREAK), so build the list from
+    # what the platform actually provides.
+    wanted = ["SIGTERM", "SIGINT", "SIGUSR1", "SIGHUP"]
+    available = tuple(getattr(signal, name) for name in wanted if hasattr(signal, name))
+    bridge = SignalBridge(available, companion)
+    toggle_signal = getattr(signal, "SIGUSR1", None)
+    hup_signal = getattr(signal, "SIGHUP", None)
 
     def _on_signal(signum: int) -> None:
-        if signum == signal.SIGUSR1:
+        if toggle_signal is not None and signum == toggle_signal:
             # `deepseek --toggle` gets him out of the way (or back), exactly
             # like the global hotkey - not just the input box
             companion.toggle_hotkey()
-        elif signum == signal.SIGHUP:
+        elif hup_signal is not None and signum == hup_signal:
             pass  # the launching terminal closed: keep the companion alive
         else:
             app.quit()
 
     bridge.received.connect(_on_signal)
+
+    if os.name == "nt":  # pragma: no cover - Windows
+        marker = Path(instance_path()).with_suffix(".toggle")
+        poll = QTimer(companion)
+        poll.setInterval(500)
+
+        def check_toggle() -> None:
+            if marker.exists():
+                try:
+                    marker.unlink()
+                except OSError:
+                    pass
+                companion.toggle_hotkey()
+
+        poll.timeout.connect(check_toggle)
+        poll.start()
 
     # Nothing is force-shown here: with --start-hidden the companion waits for
     # the hotkey (or `run.sh --toggle`) instead of popping up at login.

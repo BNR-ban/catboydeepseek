@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from . import x11
+from . import desktop
 
 PANEL_BG = QColor(17, 20, 29, 26)        # replaced from config at construction
 PANEL_BORDER = QColor(120, 160, 255, 60)
@@ -460,7 +460,7 @@ class ChatPanel(QWidget):
         """Shift with the character, keeping a pinned box at the same offset."""
         if delta.isNull() or not self.isVisible():
             return
-        point = x11.clamp_to_screens(QRect(self.pos() + delta, self.size()))
+        point = desktop.clamp_to_screens(QRect(self.pos() + delta, self.size()))
         self.move(point)
         if self.pinned:
             self._config.set("chat.x", self.x())
@@ -511,7 +511,7 @@ class ChatPanel(QWidget):
 
     def _keep_on_screen(self) -> None:
         """Growing the answer must not push the panel off the display."""
-        geo = x11.available_geometry()
+        geo = desktop.available_geometry()
         y = min(self.y(), geo.bottom() - self.height() - 4)
         x = min(max(self.x(), geo.left() + 4), geo.right() - self.width() - 4)
         if (x, y) != (self.x(), self.y()):
@@ -568,11 +568,11 @@ class ChatPanel(QWidget):
         stored_x = int(self._config.get("chat.x", -1))
         stored_y = int(self._config.get("chat.y", -1))
         if self.pinned and stored_x >= 0 and stored_y >= 0:
-            point = x11.clamp_to_screens(QRect(stored_x, stored_y, width, height))
+            point = desktop.clamp_to_screens(QRect(stored_x, stored_y, width, height))
             self.move(point)
             return
 
-        geo = x11.available_geometry()
+        geo = desktop.available_geometry()
         gap = 8
         x = anchor.center().x() - width // 2
         y = anchor.bottom() + gap

@@ -15,7 +15,7 @@ from PyQt5.QtCore import QRect, QSize, Qt, QTimer
 from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QWidget
 
-from . import x11
+from . import desktop
 
 BG = QColor(16, 20, 31, 105)
 BORDER = QColor(120, 160, 255, 90)
@@ -136,7 +136,7 @@ class SpeechBubble(QWidget):
         scored: covering the panel is worst, covering the character is bad,
         being clipped by the screen edge is mildly bad.
         """
-        geo = x11.available_geometry()
+        geo = desktop.available_geometry()
         best: QRect | None = None
         best_score = 1 << 30
         for index, option in enumerate(self._candidates(anchor, avoid)):

@@ -1,7 +1,7 @@
 # DeepSeek Companion
 
-A tiny transparent desktop character that lives on your Linux desktop and shows
-what DeepSeek is *actually* doing. It is not a chatbot in a window: the six
+A tiny transparent desktop character that lives on your desktop — **Linux,
+Windows or macOS** — and shows what DeepSeek is *actually* doing. It is not a chatbot in a window: the six
 poses of the supplied character sheet **are** the interface. He is a catboy
 femboy companion — playful, affectionate, calls you "daddy" — and when an answer
 lands he pops a little speech bubble above his head with a one-line summary of
@@ -88,25 +88,55 @@ now?"* — and fades out on its own after `bubble.duration_ms`.
 | ![attaching files](docs/inuse-3-files.png) | ![petting](docs/petting.png) |
 | Files dropped on him ride along with the message (`📎 2 attached`) | Petting him: blush, hearts and a purr line — no sound |
 
-Every screenshot is a real capture from a live desktop: the see-through parts
-really are see-through, and the tool lines (`▸ $ …`, `▸ ✓ …`) are what actually
-ran.
+These are the app's own pixels — the windows rendered by the running program
+(real transparency, real fonts, the commands that actually ran) and composited
+onto a plain backdrop, so the pictures show only him and the box, never the
+desktop behind them.
 
 ---
 
 ## Requirements
 
-* Linux with X11 (bspwm, i3, …) — Wayland works with the limitations listed below
+Works on **Linux, Windows and macOS** — anything with Python and Qt:
+
 * Python 3.11+ (uses `tomllib`)
-* `python3-pyqt5`, `python3-pil`, `python3-requests`
-* a compositor for per-pixel transparency: **picom** (or compton). Without one
-  the companion automatically falls back to a 1-bit shape mask so it is still
-  not a black rectangle, just slightly harder-edged.
+* PyQt5, Pillow, requests
+* Linux only: a compositor (**picom**/compton) for per-pixel transparency.
+  Without one he falls back to a 1-bit shape mask, so he is still not a black
+  rectangle — just slightly harder-edged.
 
 ```bash
 # Debian / Ubuntu
 sudo apt install python3-pyqt5 python3-pil python3-requests picom
+# Fedora
+sudo dnf install python3-qt5 python3-pillow python3-requests picom
+# Arch
+sudo pacman -S python-pyqt5 python-pillow python-requests picom
+# Windows / macOS (any Python 3.11+)
+pip install PyQt5 Pillow requests
 ```
+
+### Platform support
+
+| | Linux / X11 | Linux / Wayland | Windows | macOS |
+|---|---|---|---|---|
+| transparent always-on-top character | ✅ | ✅ | ✅ | ✅ |
+| drag, wheel-scale, opacity, petting | ✅ | ✅ | ✅ | ✅ |
+| click-through | ✅ (input shape) | compositor-dependent | ✅ (Qt + `WS_EX_TRANSPARENT`) | ✅ |
+| global hotkeys | ✅ XGrabKey | bind it in your compositor to `deepseek --toggle` | ✅ `RegisterHotKey` | ✅ with optional `pynput` |
+| show on every desktop | ✅ `_NET_WM_DESKTOP` | ✅ | n/a (stays always-on-top) | n/a (stays always-on-top) |
+| autostart | ✅ XDG `.desktop` | ✅ | ✅ Startup folder | ✅ LaunchAgent |
+| desktop access tools | ✅ bash | ✅ bash | ✅ `cmd.exe` | ✅ bash |
+
+Everything OS-specific lives in one module, `src/dscompanion/desktop.py`: each
+feature is used where the OS has it and quietly skipped where it does not, and
+the app says what is missing instead of failing.
+
+**Tested where:** Linux/X11 (bspwm) is the environment this was developed and
+tested in — the 52-check suite runs there. The Windows and macOS paths are
+written against the documented APIs and guarded so they degrade instead of
+crashing, but they have not been run on those systems yet: if you hit something,
+please open an issue.
 
 ## Quick start
 
@@ -115,8 +145,19 @@ Install him once as a normal desktop app:
 ```bash
 git clone https://github.com/BNR-ban/catboydeepseek.git
 cd catboydeepseek
-./scripts/install_app.sh            # adds the `deepseek` command + menu entry
+
+./scripts/install_app.sh            # Linux/macOS: adds the `deepseek` command
+python3 scripts/install_app.py      # ...or the same installer, any platform
 deepseek                            # start him - no terminal needed
+```
+
+On Windows, `run.cmd` starts him from the checkout and the installer writes a
+`deepseek.cmd` command plus a Start-menu entry and an optional Startup entry:
+
+```bat
+git clone https://github.com/BNR-ban/catboydeepseek.git
+cd catboydeepseek
+run.cmd                                & rem or: python scripts\install_app.py
 ```
 
 That writes two small files: `~/.local/bin/deepseek` (the launcher) and
@@ -388,7 +429,8 @@ Click-through is implemented on X11 by emptying the window's *input shape*
 
 ## Performance
 
-Measured on this machine (Debian 13, X11, picom, Python 3.13):
+Measured on the development machine (Debian 13, X11/bspwm, picom, Python 3.13 —
+Windows and macOS will differ, but nothing here is Linux-specific):
 
 | Metric | Value |
 |---|---|
@@ -418,17 +460,27 @@ Reproduce the numbers yourself:
 python3 scripts/selftest.py --visual     # 52 checks + screenshots of every state
 ```
 
-## Wayland / X11
+## Platform notes
 
-| Feature | X11 | Wayland |
-|---|---|---|
-| transparent always-on-top character | yes | yes |
-| click-through | yes (input shape) | not implemented — the generic protocol for it is not available to toolkits yet |
-| global hotkeys | yes (XGrabKey) | no; bind a compositor shortcut to `./run.sh --toggle` instead |
-| drag / scale / opacity | yes | yes |
+**Linux / X11** — the full experience: sticky on every desktop, XShape
+click-through, XGrabKey hotkeys, XDG autostart.
 
-The app detects the session (`$WAYLAND_DISPLAY`, `$DISPLAY`) and says what is
-unavailable on stderr instead of failing. X11 is the tested target (bspwm).
+**Linux / Wayland** — everything works except two things the platform does not
+let an ordinary app do: there is no unprivileged global-hotkey grab and
+click-through depends on the compositor. Bind a compositor shortcut to
+`deepseek --toggle` and he is complete.
+
+**Windows** — click-through uses Qt's flag plus `WS_EX_TRANSPARENT`; hotkeys use
+`RegisterHotKey` (so `Ctrl+Shift+Space` works from inside a game); autostart is a
+Startup-folder entry. There is no "show on every desktop" for a normal window, so
+he simply stays always-on-top.
+
+**macOS** — transparent, always-on-top, click-through and petting all work.
+Global hotkeys need the optional `pynput` package (`pip install pynput`); without
+it the app tells you and keeps working with the in-window shortcuts.
+
+The session is detected at startup and anything unavailable is reported on
+stderr, not swallowed.
 
 ## Project layout
 
@@ -442,7 +494,8 @@ catboydeepseek/
 ├── scripts/
 │   ├── slice_states.py        regenerate assets from the character sheet
 │   ├── selftest.py            end-to-end test + visual capture
-│   ├── install_app.sh         install the `deepseek` command + menu entry
+│   ├── install_app.py         cross-platform installer (command + menu entry)
+│   ├── install_app.sh         same thing for Linux/macOS shells
 │   └── install_autostart.sh   optional XDG autostart entry (older helper)
 └── src/dscompanion/
     ├── __main__.py            python3 -m dscompanion
@@ -456,7 +509,8 @@ catboydeepseek/
     ├── agent.py               the cowork loop (tools, approvals, streaming)
     ├── tools.py               the desktop tools he can actually use
     ├── hotkey.py              X11 global hotkeys, event-driven
-    ├── x11.py                 compositor detection, click-through, placement
+    ├── desktop.py             the platform layer: click-through, sticky, hotkeys
+    ├── x11.py                 the Linux/X11 backend underneath it
     ├── autostart.py           optional XDG autostart entry
     └── app.py                 controller: wires state machine ⇄ API ⇄ windows
 ```
@@ -583,9 +637,13 @@ from them are this project's own artwork; the MIT grant covers the code.
 ## Design notes
 
 * **Qt5 (PyQt5)** was chosen over Electron/Tauri because it gives per-pixel
-  alpha, input shapes, always-on-top and global-hotkey-friendly X11 integration
-  in one process with the raster paint engine and no webview. It is the heaviest
-  dependency in the project, and it is the *only* one beyond `requests`/`Pillow`.
+  alpha, always-on-top and click-through on all three desktop platforms in one
+  process with the raster paint engine and no webview. It is the heaviest
+  dependency in the project, and the only one beyond `requests`/`Pillow`.
+* **Every OS-specific behaviour is in `desktop.py`** — the app code asks for
+  "click-through", "sticky", "hotkey", "autostart" and gets the platform's
+  version or a clear "not here". Linux/X11 also has a thin backend in `x11.py`
+  (XShape input regions, `_NET_WM_DESKTOP`, XGrabKey via ctypes, no bindings).
 * **The API layer imports nothing from Qt** (`api.py`), and the UI never touches
   HTTP: swapping model or provider means writing one class with the same
   `stream()` surface.

@@ -21,9 +21,8 @@ for arg in "$@"; do
   esac
 done
 
-run_py() {
-  PYTHONPATH="$here/src${PYTHONPATH:+:$PYTHONPATH}" python3 - "$@"
-}
+# delegate to the cross-platform installer so Linux/Windows/macOS share one path
+exec python3 "$here/scripts/install_app.py" "$@"
 
 if [ "$action" = "uninstall" ]; then
   run_py <<'PY'

@@ -1,13 +1,12 @@
-"""Global hotkeys on X11 via XGrabKey, driven by a blocking X event loop.
+"""Global hotkeys, per platform.
 
-Why not a polling timer: this module owns a private X connection and blocks in
-select() on its file descriptor.  The kernel wakes the thread only when a key
-is actually pressed, so an idle companion performs zero periodic work.  A pipe
-is used to unblock the thread on shutdown.
-
-Wayland has no equivalent for unprivileged clients (global shortcuts go through
-the compositor's portal), so there the module simply reports unavailable and the
-app keeps working with its window-local shortcuts.
+* **Linux / X11** - XGrabKey on a private X connection, driven by a blocking
+  select() so an idle companion does zero periodic work.
+* **Windows** - RegisterHotKey plus a native event filter for WM_HOTKEY.
+* **macOS** - whichever of pynput's global listeners is importable; if it is not
+  installed the app says so and relies on its window-local shortcuts.
+* **Wayland** - no unprivileged global shortcuts exist; the compositor has to
+  bind them, so the app reports that and keeps working.
 """
 
 from __future__ import annotations
@@ -20,6 +19,8 @@ import threading
 from typing import Callable, Optional
 
 from PyQt5.QtCore import QObject, pyqtSignal
+
+from . import x11
 
 X11_CTRL, X11_SHIFT, X11_LOCK, X11_MOD1, X11_MOD2, X11_MOD4 = (
     1 << 2, 1 << 0, 1 << 1, 1 << 3, 1 << 4, 1 << 6,
@@ -224,6 +225,163 @@ class _X11KeyListener:
                     pass
 
 
+class _WindowsKeyListener:
+    """RegisterHotKey + WM_HOTKEY through a Qt native event filter.
+
+    RegisterHotKey is asynchronous: the key press is delivered to the thread
+    that registered it as WM_HOTKEY, so this installs a filter on the
+    application and turns those messages back into named actions.
+    """
+
+    MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, MOD_NOREPEAT = 0x0001, 0x0002, 0x0004, 0x0008, 0x4000
+    WM_HOTKEY = 0x0312
+
+    def __init__(self, bindings: dict[str, tuple[int, str]], on_fire):
+        self._bindings = bindings
+        self._on_fire = on_fire
+        self._ids: dict[int, str] = {}
+        self._filter = None
+        self.error: str | None = None
+
+    @staticmethod
+    def _parse(spec: str) -> tuple[int, int] | None:
+        """'ctrl+shift+space' -> (modifiers, virtual key code)."""
+        parts = [p.strip().lower() for p in spec.replace("-", "+").split("+") if p.strip()]
+        mods = 0
+        key = None
+        for part in parts:
+            if part in ("ctrl", "control"):
+                mods |= _WindowsKeyListener.MOD_CONTROL
+            elif part == "shift":
+                mods |= _WindowsKeyListener.MOD_SHIFT
+            elif part in ("alt", "mod1"):
+                mods |= _WindowsKeyListener.MOD_ALT
+            elif part in ("super", "win", "meta", "mod4"):
+                mods |= _WindowsKeyListener.MOD_WIN
+            elif part != "norepeat":
+                key = part
+        if key is None:
+            return None
+        vk = None
+        if len(key) == 1:
+            vk = ord(key.upper())
+        elif key.startswith("f") and key[1:].isdigit():
+            vk = 0x70 + int(key[1:]) - 1          # VK_F1
+        else:
+            named = {"space": 0x20, "enter": 0x0D, "return": 0x0D, "tab": 0x09,
+                     "escape": 0x1B, "esc": 0x1B, "backspace": 0x08}
+            vk = named.get(key)
+        return (mods, vk) if vk else None
+
+    def start(self) -> bool:
+        import ctypes
+
+        from PyQt5.QtCore import QAbstractNativeEventFilter
+
+        try:
+            user32 = ctypes.windll.user32
+        except Exception as exc:                       # pragma: no cover
+            self.error = f"no user32: {exc}"
+            return False
+
+        for index, (action, spec) in enumerate(self._bindings.items(), start=1):
+            parsed = self._parse(spec) if spec else None
+            if not parsed:
+                continue
+            mods, vk = parsed
+            if user32.RegisterHotKey(None, index, mods | self.MOD_NOREPEAT, vk):
+                self._ids[index] = action
+            else:
+                self.error = f"another program already owns {spec}"
+        if not self._ids:
+            return False
+
+        ids = dict(self._ids)
+        fire = self._on_fire
+
+        class _Filter(QAbstractNativeEventFilter):
+            def nativeEventFilter(self, _event_type, message):  # noqa: N802
+                try:
+                    msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.c_void_p))
+                    message_id, wparam = msg[1], msg[2]
+                    if message_id == _WindowsKeyListener.WM_HOTKEY:
+                        action = ids.get(int(wparam or 0))
+                        if action:
+                            fire(action)
+                except Exception:
+                    pass
+                return False, 0
+
+        from PyQt5.QtWidgets import QApplication
+
+        self._filter = _Filter()
+        QApplication.instance().installNativeEventFilter(self._filter)
+        return True
+
+    def stop(self) -> None:
+        if not self._ids:
+            return
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            for index in self._ids:
+                user32.UnregisterHotKey(None, index)
+        except Exception:
+            pass
+        try:
+            from PyQt5.QtWidgets import QApplication
+
+            if self._filter is not None:
+                QApplication.instance().removeNativeEventFilter(self._filter)
+        except Exception:
+            pass
+        self._ids.clear()
+
+
+class _MacKeyListener:
+    """macOS global hotkeys through pynput, when it is installed."""
+
+    def __init__(self, bindings: dict[str, str], on_fire):
+        self._bindings = bindings
+        self._on_fire = on_fire
+        self._listener = None
+        self.error: str | None = None
+
+    def start(self) -> bool:
+        try:
+            from pynput import keyboard
+        except Exception:
+            self.error = ("macOS global hotkeys need the optional 'pynput' package "
+                          "(pip install pynput); window shortcuts still work")
+            return False
+        mapping: dict[str, str] = {}
+        for action, spec in self._bindings.items():
+            if not spec:
+                continue
+            pretty = "+".join(p.strip().lower() for p in spec.split("+"))
+            mapping[pretty] = action
+
+        def on_activate(spec_text: str) -> None:
+            self._on_fire(mapping[spec_text])
+
+        try:
+            hotkeys = {spec: (lambda s=spec: on_activate(s)) for spec in mapping}
+            self._listener = keyboard.GlobalHotKeys(hotkeys)
+            self._listener.start()
+            return True
+        except Exception as exc:
+            self.error = f"pynput could not register the hotkeys: {exc}"
+            return False
+
+    def stop(self) -> None:
+        if self._listener is not None:
+            try:
+                self._listener.stop()
+            except Exception:
+                pass
+
+
 class HotkeyManager(QObject):
     """Qt-facing wrapper: emits `triggered(action_name)` on the GUI thread."""
 
@@ -237,23 +395,39 @@ class HotkeyManager(QObject):
         self.active: dict[str, str] = {}
 
     def register(self, bindings: dict[str, str]) -> bool:
-        parsed = {}
-        for action, spec in bindings.items():
-            if not spec:
-                continue
-            parsed[action] = parse_hotkey(spec)
-            if parsed[action]:
-                self.active[action] = spec
-        if not parsed:
+        wanted = {action: spec for action, spec in bindings.items() if spec}
+        if not wanted:
             self.error = "no hotkeys configured"
             return False
-        listener = _X11KeyListener(parsed, self.triggered.emit)
+
+        from . import desktop
+
+        if desktop.WINDOWS:
+            listener = _WindowsKeyListener(wanted, self.triggered.emit)
+            self.active = dict(wanted)
+        elif desktop.MACOS:
+            listener = _MacKeyListener(wanted, self.triggered.emit)
+            self.active = dict(wanted)
+        elif x11.is_x11():
+            parsed = {}
+            for action, spec in wanted.items():
+                parsed[action] = parse_hotkey(spec)
+                if parsed[action]:
+                    self.active[action] = spec
+            if not parsed:
+                self.error = "no usable hotkeys configured"
+                return False
+            listener = _X11KeyListener(parsed, self.triggered.emit)
+        else:
+            self.error = ("global hotkeys need X11; on Wayland bind a compositor "
+                          "shortcut to 'deepseek --toggle' instead")
+            return False
+
         if not listener.start():
             self.error = listener.error
             return False
-        listener.error = listener.error  # keep message even on success
         self._listener = listener
-        self.error = listener.error
+        self.error = getattr(listener, "error", None)
         self.available = True
         return True
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -119,6 +120,35 @@ class ToolResult:
     summary: str  # one short line, for the bubble and the transcript
 
 
+def _shell_command(command: str) -> list[str]:
+    """The right shell for this OS: bash on POSIX, cmd.exe on Windows."""
+    if sys.platform.startswith("win"):
+        return ["cmd.exe", "/c", command]
+    return ["bash", "-lc", command]
+
+
+def _process_group_kwargs() -> dict:
+    """Start the command in its own process group so it can be killed as a tree."""
+    if sys.platform.startswith("win"):
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def _kill_tree(process) -> None:
+    """Kill a timed-out command *and its children* on any platform."""
+    if sys.platform.startswith("win"):  # pragma: no cover - Windows
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                           capture_output=True, timeout=10)
+        except Exception:
+            process.kill()
+        return
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, AttributeError):
+        process.kill()
+
+
 def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -196,13 +226,13 @@ class ToolBox:
             cwd = _workspace(self._config)
         try:
             process = subprocess.Popen(
-                ["bash", "-lc", command],
+                _shell_command(command),
                 cwd=str(cwd),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 text=True,
-                start_new_session=True,
+                **_process_group_kwargs(),
             )
         except OSError as exc:
             return ToolResult(False, f"could not start: {exc}", f"$ {command} (failed)")
@@ -210,10 +240,7 @@ class ToolBox:
             output, _ = process.communicate(timeout=self.timeout)
             code = process.returncode
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                process.kill()
+            _kill_tree(process)
             output, _ = process.communicate()
             code = -1
             output = f"{output}\n[timed out after {self.timeout:.0f}s]"

@@ -17,7 +17,7 @@ from PyQt5.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPixmap, QRadialGradient
 from PyQt5.QtWidgets import QWidget
 
-from . import x11
+from . import desktop
 from .assets import AssetSet
 from .states import State
 
@@ -66,7 +66,7 @@ class CharacterWindow(QWidget):
         self._press_pos: QPoint | None = None
         self._resize_origin: tuple[QPoint, float, int] | None = None
         self._pixmap: QPixmap | None = None
-        self._composited = x11.have_compositor()
+        self._composited = desktop.have_compositor()
         self._drag_hover = False
         self._blush = 0.0          # 0..1, decays after a pet
         self._blush_steps = 0
@@ -94,9 +94,9 @@ class CharacterWindow(QWidget):
 
         self._apply_geometry()
         self.set_state(self._state, force=True)
-        if config.get("character.sticky", True) and x11.is_x11():
-            # after the window is mapped, tell the WM to keep it everywhere
-            QTimer.singleShot(0, lambda: x11.set_sticky(int(self.winId()), True))
+        if config.get("character.sticky", True):
+            # after the window is mapped, ask the WM to keep it everywhere
+            QTimer.singleShot(0, lambda: desktop.set_sticky(self, True))
 
     # ------------------------------------------------------------------ layout
     def canvas_size(self) -> QSize:
@@ -119,11 +119,11 @@ class CharacterWindow(QWidget):
         x = int(self._config.get("character.x", -1))
         y = int(self._config.get("character.y", -1))
         if x < 0 or y < 0:
-            geo = x11.available_geometry()
+            geo = desktop.available_geometry()
             x = geo.right() - size.width() - 30
             y = geo.bottom() - size.height() - 10
         else:
-            point = x11.clamp_to_screens(QRect(x, y, size.width(), size.height()))
+            point = desktop.clamp_to_screens(QRect(x, y, size.width(), size.height()))
             x, y = point.x(), point.y()
         self.setGeometry(x, y, size.width(), size.height())
 
@@ -141,9 +141,9 @@ class CharacterWindow(QWidget):
             self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
         if not self._composited:
-            # Without a compositor an ARGB window paints as a black box, so clip
-            # the window to the sprite silhouette instead (1-bit transparency).
-            x11.apply_shape_mask(self, self._pixmap)
+            # Without a compositor (Linux) an ARGB window paints as a black box,
+            # so clip it to the sprite silhouette instead (1-bit transparency).
+            desktop.apply_shape_mask(self, self._pixmap)
         self.update()
 
     def reload_assets(self, assets: AssetSet) -> None:
@@ -295,11 +295,8 @@ class CharacterWindow(QWidget):
         if on == self._click_through:
             return
         self._click_through = on
-        self.setWindowFlag(Qt.WindowTransparentForInput, on)
-        self.show()
+        desktop.set_click_through(self, on)   # Qt flag + per-OS extras
         self.ensure_sticky(150)
-        if x11.is_x11():
-            x11.set_input_shape_empty(int(self.winId()), on)
 
     @property
     def click_through(self) -> bool:
@@ -319,12 +316,12 @@ class CharacterWindow(QWidget):
         window manager finishes re-managing it a moment later, so the hint is
         applied twice: immediately and once things have settled.
         """
-        if not self._config.get("character.sticky", True) or not x11.is_x11():
+        if not self._config.get("character.sticky", True):
             return
 
         def apply() -> None:
             try:
-                x11.set_sticky(int(self.winId()), True)
+                desktop.set_sticky(self, True)
             except RuntimeError:  # window already gone
                 pass
 
