@@ -7,6 +7,19 @@ femboy companion — playful, affectionate, calls you "daddy" — and when an an
 lands he pops a little speech bubble above his head with a one-line summary of
 what he just did for you.
 
+**What he can actually do** — turn on desktop access and he is a real coding
+agent, not a chat window:
+
+- **write and edit code** — reads your files, makes surgical edits, runs your tests
+- **build whole games and apps** — scaffolds the project, writes every file, runs it
+- **drive the machine** — shell commands, git, package managers, builds, services
+- **see** — drop a screenshot or any image on him and he reads it (vision)
+- **debug for real** — reads the error, tries a fix, checks the result, keeps going
+- **report back** — one line in his bubble, every command logged in the transcript
+
+...and when nothing is happening he is just a cat: blush, hearts, purring, and
+his pose always showing exactly what DeepSeek is doing.
+
 ## Who he is
 
 A **catboy femboy companion**: cute, clingy, a little flirty, and genuinely good
