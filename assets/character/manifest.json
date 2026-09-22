@@ -1,0 +1,84 @@
+{
+  "generated_from": "finalcatboydeepseek.png",
+  "mode": "files",
+  "states": {
+    "thinking": {
+      "file": "thinking.png",
+      "canvas": [
+        512,
+        532
+      ],
+      "anchor": [
+        28,
+        153,
+        456,
+        373
+      ]
+    },
+    "thinking_longer": {
+      "file": "thinking_longer.png",
+      "canvas": [
+        512,
+        532
+      ],
+      "anchor": [
+        6,
+        101,
+        500,
+        425
+      ]
+    },
+    "proud": {
+      "file": "proud.png",
+      "canvas": [
+        512,
+        532
+      ],
+      "anchor": [
+        12,
+        6,
+        487,
+        520
+      ]
+    },
+    "talking": {
+      "file": "talking.png",
+      "canvas": [
+        512,
+        532
+      ],
+      "anchor": [
+        30,
+        148,
+        452,
+        378
+      ]
+    },
+    "finished": {
+      "file": "finished.png",
+      "canvas": [
+        512,
+        532
+      ],
+      "anchor": [
+        19,
+        152,
+        474,
+        374
+      ]
+    },
+    "listening": {
+      "file": "listening.png",
+      "canvas": [
+        512,
+        532
+      ],
+      "anchor": [
+        21,
+        171,
+        470,
+        355
+      ]
+    }
+  }
+}

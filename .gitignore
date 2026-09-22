@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Local secrets and user state - never commit these
+config/config.local.toml
+api_key
+*.key
+
+# Generated review artefacts from scripts/slice_states.py --debug
+assets/character/_debug_*.png
+assets/character/_contact_sheet.png

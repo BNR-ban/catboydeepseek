@@ -1,0 +1,4 @@
+# Runtime dependencies (all available from Debian/Ubuntu repositories)
+PyQt5>=5.15
+Pillow>=9.0
+requests>=2.25

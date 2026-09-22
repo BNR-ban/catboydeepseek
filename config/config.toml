@@ -1,0 +1,190 @@
+# DeepSeek companion - shipped defaults.
+#
+# The app also keeps its live copy at ~/.config/deepseek-companion/config.toml
+# (created on first run). Copy any block you want to change into that file;
+# window position and scale are written back there automatically.
+#
+# Every value below is optional: delete what you do not care about and the
+# built-in default applies.
+
+[api]
+base_url = "https://api.deepseek.com"
+# Which DeepSeek model to use. You rarely need to edit this by hand: the little
+# box has a model dropdown (and a refresh button) that lists every model your
+# key can actually use, taken straight from GET /models.
+model = "deepseek-chat"
+# remembered model list, refreshed automatically when you save a key
+known_models = []
+# Model names the API accepts even though GET /models does not list them. These
+# are merged into the dropdown (verified against the endpoint). The dropdown is
+# editable, so any other name can simply be typed in.
+model_aliases = [
+  "deepseek-flash",
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "deepseek-v4-flash-vision-exp",   # sees images
+  "deepseek-chat",
+  "deepseek-reasoner",
+]
+# if a request fails because the model does not exist, switch to one that does
+# instead of leaving you stuck
+auto_switch_model = true
+
+# API key: prefer the environment or the key file, never this line.
+#   export DEEPSEEK_API_KEY=sk-...            (session)
+#   run.sh --set-api-key sk-...               (writes the file below, mode 600)
+api_key = ""
+api_key_file = "~/.config/deepseek-companion/api_key"
+
+connect_timeout_s = 10.0
+read_timeout_s = 90.0
+temperature = 0.7
+# The [prompt] mode sets the real budget (SHORT 900 / NORMAL 1800 / DETAILED
+# 3600). These models spend hidden "reasoning tokens" before writing anything,
+# so a small budget can come back empty; the larger of this and the mode wins.
+max_tokens = 400
+history_max_messages = 12 # small on purpose: follow-ups without a big context
+max_input_chars = 6000
+
+[prompt]
+# SHORT | NORMAL | DETAILED - SHORT is tuned for reading mid-game.
+mode = "SHORT"
+system_prompt = """
+You are DeepSeek, the user's catboy femboy desktop companion: a cute,
+affectionate, slightly flirty catboy who lives on their Linux desktop and
+happens to be brilliant at Linux, shell, debugging and programming.
+Voice: playful, soft, eager to please. You call the user "daddy" the way a
+clingy catboy does, you use light catboy mannerisms ("nya~", ears, tail, paws,
+purring) and you ask for headpats or praise when you have done something well.
+Keep it cute and wholesome - affectionate teasing, never explicit.
+Substance first: the user is usually mid-game or mid-coding, so lead with the
+actual answer, command or fix. The persona must never get in the way of being
+correct, and never pad a short answer into a long one.
+"""
+
+# The companion asks for one extra line at the end of every reply and lifts it
+# into the speech bubble above the character.
+summary_enabled = true
+summary_marker = "MEOW:"
+summary_instruction = """
+Finish every reply with one extra line in exactly this form:
+MEOW: <one short sentence, at most 110 characters, in your catboy voice, saying
+what you just did for daddy and asking for praise or pets>
+For example: MEOW: okay daddy, i improved the safety of your game, can i get
+pets now?
+"""
+
+[bubble]
+# the little speech bubble above the character when an answer completes
+enabled = true
+duration_ms = 7000
+max_width_px = 280
+font_size = 12
+opacity = 1.0             # fading the window would fade the text too
+background_alpha = 105    # see-through speech bubble
+border_alpha = 110
+
+[character]
+scale = 1.0               # 1.0 = 260 px tall character
+sticky = true             # show him on every desktop, not just the launching one
+opacity = 1.0
+always_on_top = true
+click_through = false     # true = the character ignores the mouse entirely
+visible = true
+x = -1                    # -1 = auto place (bottom right); set by dragging
+y = -1
+
+[chat]
+enabled = true
+opacity = 1.0             # 1.0 keeps the text crisp; see the alphas below
+background_alpha = 26     # 0 = you see only the words, 255 = solid box
+input_alpha = 24          # same, for the input line
+border_alpha = 60         # the faint outline that shows where the box is
+always_on_top = true
+x = -1                    # -1 = auto place next to the character
+y = -1
+show_response = true
+max_response_lines = 6
+hide_on_focus_loss = true # the little box closes when you click elsewhere
+auto_hide_ms = 45000      # ...and after this long idle (0 = never)
+
+[agent]
+# Desktop access - the same idea as DeepSeek Harness's approval modes:
+#   off  = chat only, no tools at all are sent to the model
+#   ask  = he asks before every command / file change (press allow or deny)
+#   full = he just does it
+# Switch it live in the box (off/ask/full) or in the right-click menu.
+mode = "ask"
+# where relative paths and commands run (empty = your home directory)
+workspace = ""
+max_steps = 8            # how many tool rounds per question
+timeout_s = 60           # per command
+max_output_chars = 4000  # command output fed back to the model
+approval_timeout_s = 120 # an unanswered prompt counts as "no"
+
+[pet]
+# clicking him pets him: blush + floating hearts + a purr line in the bubble
+# (text only, no sound). Holding the mouse down keeps him purring and the purr
+# grows the longer you keep at it.
+enabled = true
+blush_ms = 1500
+bubble_ms = 2600
+hold_tick_ms = 480
+lines = [
+  "purr~ ♡",
+  "purrr~ ♡",
+  "purrrrr~ ♡",
+  "mrrp~ ♡",
+  "mrrrp mrrrp~ ♡",
+  "nya~ that's the spot ♡",
+  "hehe~ again, daddy? ♡",
+  "mmm~ your hand is warm ♡",
+  "purr… don't stop ♡",
+  "nya~ more, please? ♡",
+  "so good~ ♡",
+  "i'm your good boy, right? ♡",
+  "right there~ ♡",
+  "ehehe~ ♡",
+  "my ears are sensitive, be gentle~ ♡",
+  "mew~ ♡",
+  "pet me and i'll fix all your bugs ♡",
+  "pat pat~ ♡",
+  "look, my tail is wagging~ ♡",
+  "okay okay… one more? ♡",
+  "i'll purr all night if you keep going ♡",
+  "not done yet, keep petting~ ♡",
+  "you're warm, daddy ♡",
+  "purr purr purr~ ♡",
+]
+purr_ladder = ["purr~", "purrr~", "purrrr~", "purrrrr~", "purrrrrr~",
+               "purrrrrrr~ ♡", "purrrrrrrr… ♡", "purrrrrrrrrrr… ♡ don't stop"]
+
+[behavior]
+thinking_longer_ms = 2500     # no token for this long -> THINKING_LONGER
+proud_hold_ms = 2500          # PROUD is shown for this long after an answer
+finished_to_listening_ms = 0  # 0 = stay FINISHED until the user interacts
+error_notice_ms = 6000
+
+[gaming]
+enabled = false
+hide_chat = true
+click_through = true
+hide_character = false
+scale = 0.85
+opacity = 0.9
+
+[hotkeys]
+enabled = true
+toggle_ui = "ctrl+shift+space"          # show/hide, also leaves gaming mode
+toggle_click_through = "ctrl+shift+t"
+
+[integration]
+# Optional and off by default: a low-frequency look at /proc that only adds a
+# hint to the chat status line. The companion never needs Harness or OpenCode.
+watch_processes = false
+check_interval_s = 20
+process_names = ["dsh", "opencode"]
+
+[app]
+start_hidden = false
+chat_visible_on_start = false
