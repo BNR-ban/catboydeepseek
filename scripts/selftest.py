@@ -771,6 +771,41 @@ def run(visual: bool = False) -> int:
               not companion.bubble.text.startswith("purr") or True,
               f"bubble={companion.bubble.text!r}")
         companion.chat.hide_panel()
+        wait(150, s8c2_animation)
+
+    def s8c2_animation():
+        """Animations must move him, stop again, and freeze in gaming mode."""
+        character = companion.character
+        character.set_frozen(False)
+        character._play("chill", 0.8)
+        frames = set()
+        deadline = time.monotonic() + 1.6
+        while time.monotonic() < deadline:
+            companion.app.processEvents()
+            time.sleep(0.01)
+            frames.add((round(character._anim["dy"], 2), round(character._anim["rot"], 2)))
+        check("an animation episode actually moves him", len(frames) > 3,
+              f"{len(frames)} distinct frames")
+        check("the animation timer stops when the episode ends",
+              not character._anim_timer.isActive(),
+              f"timer active={character._anim_timer.isActive()}")
+
+        character.set_state(State.PROUD)          # eyes are drawn closed here
+        character._episode = None                 # drop the state-change "pop"
+        character._play("blink", 0.2)
+        check("he only blinks on poses drawn with open eyes",
+              character._episode is None, f"episode={character._episode}")
+        character.set_state(State.LISTENING)
+        character._episode = None
+        character._play("blink", 0.2)
+        check("he blinks when his eyes are open",
+              character._episode is not None and character._episode[0] == "blink",
+              f"episode={character._episode}")
+
+        character.set_frozen(True)
+        check("gaming mode freezes animation completely",
+              not character._anim_timer.isActive() and not character._quiet_timer.isActive())
+        character.set_frozen(False)
         wait(150, s8d_transparency)
 
     def s8d_transparency():

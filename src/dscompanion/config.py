@@ -101,6 +101,20 @@ DEFAULTS: dict[str, Any] = {
         "approval_timeout_s": 120,
         "max_output_chars": 4000,
     },
+    "animation": {
+        # He fidgets in short episodes with quiet gaps in between, so an idle
+        # companion still costs nothing: the animation timer stops completely
+        # between episodes and starts again for the next one.
+        "enabled": True,
+        "fps": 10,              # frame rate *while* an episode runs
+        "idle_gap_ms": 4500,    # average quiet time between fidgets
+        "amplitude_px": 2.0,    # how far he sways
+        "chill": True,          # breathing / body sway
+        "blink": True,          # quick blink on poses whose eyes are open
+        "curious": True,        # occasional look-around
+        "hearts": True,         # hearts float up while petted
+        "reduce_in_gaming": True,
+    },
     "pet": {
         # clicking the character pets him: he blushes, hearts float up and a
         # little purr line appears in the bubble (text only, no sound).

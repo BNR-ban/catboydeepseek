@@ -14,7 +14,6 @@ from PyQt5.QtGui import QColor, QPainter, QPainterPath, QTextCursor
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -606,6 +605,10 @@ class ChatPanel(QWidget):
 
     # ------------------------------------------------------------- attachments
     def pick_files(self) -> None:
+        # imported here on purpose: Qt's file-dialog stack (models, storage
+        # info, locale data) costs ~20 MB resident, and only this button needs it
+        from PyQt5.QtWidgets import QFileDialog
+
         paths, _filter = QFileDialog.getOpenFileNames(self, "Attach files to your message")
         if paths:
             self.attach_paths(paths)

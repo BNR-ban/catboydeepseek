@@ -13,8 +13,18 @@ Design notes for the performance goal:
 
 from __future__ import annotations
 
+import math
+import random
+
 from PyQt5.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPixmap, QRadialGradient
+from PyQt5.QtGui import (
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QRadialGradient,
+)
 from PyQt5.QtWidgets import QWidget
 
 from . import desktop
@@ -38,6 +48,21 @@ CHEEKS: dict[str, tuple[tuple[int, int], tuple[int, int], int]] = {
     "proud": ((176, 203), (252, 206), 22),
     "finished": ((188, 316), (262, 312), 22),
 }
+
+#: Face box per pose - (centre x, band top, band height, band width).  Used to
+#: place blinking eyelids and the curious look.  Measured from the artwork.
+FACE_BAND: dict[str, tuple[int, int, int, int]] = {
+    "listening": (235, 292, 83, 199),
+    "thinking": (286, 276, 73, 182),
+    "thinking_longer": (260, 276, 79, 177),
+    "talking": (240, 243, 72, 177),
+    "proud": (247, 133, 70, 96),
+    "finished": (224, 242, 71, 161),
+}
+
+#: Poses drawn with their eyes open - only these blink.  Proud and finished are
+#: already drawn with closed eyes, so blinking them would look wrong.
+OPEN_EYED = ("listening", "thinking", "thinking_longer", "talking")
 BLUSH_COLOUR = QColor(255, 118, 158)
 HEART_COLOUR = QColor(255, 140, 175)
 
@@ -73,6 +98,31 @@ class CharacterWindow(QWidget):
         self._blush_timer = QTimer(self)
         self._blush_timer.setInterval(45)
         self._blush_timer.timeout.connect(self._decay_blush)
+        # ---- animation: short episodes with quiet gaps, timer stops between
+        self._anim_cfg = {
+            "enabled": bool(config.get("animation.enabled", True)),
+            "fps": max(4, min(30, int(config.get("animation.fps", 12)))),
+            "gap": max(600, int(config.get("animation.idle_gap_ms", 4200))),
+            "amp": float(config.get("animation.amplitude_px", 2.0)),
+            "chill": bool(config.get("animation.chill", True)),
+            "blink": bool(config.get("animation.blink", True)),
+            "curious": bool(config.get("animation.curious", True)),
+            "hearts": bool(config.get("animation.hearts", True)),
+            "reduce_in_gaming": bool(config.get("animation.reduce_in_gaming", True)),
+        }
+        self._anim = {"dx": 0.0, "dy": 0.0, "rot": 0.0, "sx": 1.0, "sy": 1.0,
+                      "blink": 0.0}
+        self._hearts: list[list[float]] = []
+        self._episode: tuple[str, float, float] | None = None
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(int(1000 / self._anim_cfg["fps"]))
+        self._anim_timer.timeout.connect(self._anim_tick)
+        self._quiet_timer = QTimer(self)
+        self._quiet_timer.setSingleShot(True)
+        self._quiet_timer.timeout.connect(self._start_episode)
+        self._eyelid_colour: dict[str, QColor] = {}
+        self._frozen = False
+        self._hover = False
         self._pet_hold = False
         self._pet_ticks = 0
         self._pet_timer = QTimer(self)
@@ -135,6 +185,7 @@ class CharacterWindow(QWidget):
     def set_state(self, state: State, *, force: bool = False) -> None:
         if state is self._state and not force:
             return
+        changed = state is not self._state
         self._state = state
         pixmap = self._assets.pixmap(state)
         self._pixmap = pixmap.scaled(
@@ -144,6 +195,8 @@ class CharacterWindow(QWidget):
             # Without a compositor (Linux) an ARGB window paints as a black box,
             # so clip it to the sprite silhouette instead (1-bit transparency).
             desktop.apply_shape_mask(self, self._pixmap)
+        if changed and self._anim_cfg["enabled"]:
+            self._play("pop", 0.18)
         self.update()
 
     def reload_assets(self, assets: AssetSet) -> None:
@@ -156,19 +209,58 @@ class CharacterWindow(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.Antialiasing, True)
         # The sprite canvas is bottom-centre anchored inside the widget, which
         # keeps every pose on the same baseline.
         x = (self.width() - self._pixmap.width()) // 2
         y = self.height() - self._pixmap.height()
-        painter.drawPixmap(x, y, self._pixmap)
-        if self._blush > 0.01:
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            self._draw_blush(painter, x, y)
+        anim = self._anim
+        moving = any((anim["dx"], anim["dy"], anim["rot"],
+                      anim["sx"] - 1.0, anim["sy"] - 1.0, anim["blink"]))
+        if not moving:
+            # the common case: one blit, no transform, no extra work
+            painter.drawPixmap(x, y, self._pixmap)
+        else:
+            # breathe/sway/look happen around the bottom-centre anchor so his
+            # feet stay planted while the rest of him moves
+            painter.save()
+            painter.translate(x + self._pixmap.width() / 2 + anim["dx"],
+                              y + self._pixmap.height() + anim["dy"])
+            painter.rotate(anim["rot"])
+            painter.scale(anim["sx"], anim["sy"])
+            painter.translate(-self._pixmap.width() / 2, -self._pixmap.height())
+            painter.drawPixmap(0, 0, self._pixmap)
+            if anim["blink"] > 0.25:
+                scale = (self._pixmap.width()
+                         / max(1, self._assets.canvas.width()))
+                self._draw_blink(painter, scale)
+            painter.restore()
+        if self._blush > 0.01 or self._hearts:
+            scale = self._pixmap.width() / max(1, self._assets.canvas.width())
+            if self._blush > 0.01:
+                self._draw_blush(painter, x, y)
+            if self._hearts:
+                self._draw_hearts(painter, scale)
 
     # ------------------------------------------------------------------ mouse
     def _in_resize_corner(self, pos: QPoint) -> bool:
         return (pos.x() >= self.width() - CORNER_GRAB_PX
                 and pos.y() >= self.height() - CORNER_GRAB_PX)
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self._hover = True
+        if self._anim_cfg["enabled"] and not self._frozen:
+            self._anim["dy"] = -3.0
+            self._anim["sx"] = self._anim["sy"] = 1.015
+            self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover = False
+        if not self._episode:
+            self._anim.update({"dx": 0.0, "dy": 0.0, "rot": 0.0, "sx": 1.0, "sy": 1.0})
+            self.update()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton:
@@ -304,10 +396,33 @@ class CharacterWindow(QWidget):
 
     def set_gaming(self, on: bool) -> None:
         self._gaming = on
+        if self._anim_cfg["reduce_in_gaming"]:
+            self.set_frozen(on)
+
+    def set_frozen(self, frozen: bool) -> None:
+        """Stop all animation work (gaming mode, hidden window)."""
+        self._frozen = frozen
+        if frozen:
+            self._anim_timer.stop()
+            self._quiet_timer.stop()
+            self._episode = None
+            self._anim.update({"dx": 0.0, "dy": 0.0, "rot": 0.0, "sx": 1.0,
+                               "sy": 1.0, "blink": 0.0})
+            self._hearts = []
+            self.update()
+        else:
+            self._schedule_next()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._anim_timer.stop()
+        self._quiet_timer.stop()
+        super().hideEvent(event)
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self.ensure_sticky()
+        if self._anim_cfg["enabled"] and not self._frozen and not self._episode:
+            self._schedule_next()
 
     def ensure_sticky(self, delay_ms: int = 0) -> None:
         """Re-assert the sticky hint; a re-map (flag change, re-show) drops it.
@@ -334,9 +449,11 @@ class CharacterWindow(QWidget):
         return self._blush
 
     def pet(self) -> None:
-        """A tap: blush, one purr line (no sound), and look pleased."""
+        """A tap: blush, hearts, a squish, one purr line (no sound)."""
         if not self._config.get("pet.enabled", True):
             return
+        self._play("squish", 0.26)
+        self.spawn_hearts(3)
         self._blush = 1.0
         self._blush_steps = 0
         if not self._blush_timer.isActive():
@@ -357,6 +474,7 @@ class CharacterWindow(QWidget):
         self.update()
         self.pet_progress.emit(0)
         self._pet_timer.start()
+        self._play("chill", 1.6)
 
     def stop_pet_hold(self) -> None:
         if not self._pet_hold:
@@ -374,8 +492,183 @@ class CharacterWindow(QWidget):
     def _pet_tick(self) -> None:
         self._pet_ticks += 1
         self._blush = 1.0
+        if self._pet_ticks % 3 == 0:
+            self.spawn_hearts(1)
         self.update()
         self.pet_progress.emit(self._pet_ticks)
+
+    # ------------------------------------------------------------- animation
+    def _play(self, kind: str, seconds: float) -> None:
+        """Start (or restart) one short animation episode."""
+        if not self._anim_cfg["enabled"] or self._frozen:
+            return
+        if kind == "chill" and not self._anim_cfg["chill"]:
+            return
+        if kind == "look" and not self._anim_cfg["curious"]:
+            return
+        if kind == "blink" and (not self._anim_cfg["blink"]
+                                or self._state.value not in OPEN_EYED):
+            return
+        self._quiet_timer.stop()
+        self._episode = (kind, 0.0, seconds)
+        if not self._anim_timer.isActive():
+            self._anim_timer.start()
+
+    def _start_episode(self) -> None:
+        """Pick the next fidget, then go quiet again afterwards."""
+        if not self._anim_cfg["enabled"] or self._frozen or not self.isVisible():
+            return
+        choices = [("blink", 0.14), ("blink", 0.14), ("chill", 1.7),
+                   ("chill", 1.5), ("look", 1.4)]
+        if self._pet_hold:
+            choices = [("chill", 1.6)]
+        kind, seconds = random.choice(choices)
+        self._play(kind, seconds)
+
+    def _schedule_next(self) -> None:
+        gap = self._anim_cfg["gap"]
+        self._quiet_timer.start(int(gap * random.uniform(0.6, 1.5)))
+
+    def _anim_tick(self) -> None:
+        """Advance the current episode; stop the timer when it is over."""
+        step = 1.0 / self._anim_cfg["fps"]
+        if not self._episode:
+            if self._hearts:            # floating hearts keep animating on their own
+                self._advance_hearts(step)
+                self.update()
+                return
+            self._anim_timer.stop()
+            self._schedule_next()
+            return
+        kind, elapsed, duration = self._episode
+        elapsed += step
+        t = min(1.0, elapsed / duration)
+        amp = self._anim_cfg["amp"]
+        anim = self._anim
+        # ease in/out so movement never snaps
+        wave = math.sin(math.pi * t)
+        if kind == "chill":
+            anim["dy"] = -amp * 0.55 * wave
+            anim["rot"] = 0.45 * wave
+            anim["sx"] = 1.0 + 0.004 * wave
+            anim["sy"] = 1.0 - 0.004 * wave
+        elif kind == "look":
+            direction = 1.0 if (int(elapsed * 10) % 2) else -1.0
+            anim["dx"] = amp * 2.4 * wave * direction
+            anim["rot"] = 1.7 * wave * direction
+        elif kind == "blink":
+            anim["blink"] = math.sin(math.pi * t)
+        elif kind == "pop":
+            anim["sx"] = 1.0 + 0.05 * (1.0 - t)
+            anim["sy"] = 1.0 + 0.05 * (1.0 - t)
+        elif kind == "squish":
+            anim["sx"] = 1.0 + 0.05 * (1.0 - t)
+            anim["sy"] = 1.0 - 0.05 * (1.0 - t)
+
+        if elapsed >= duration:
+            self._episode = None
+            anim.update({"dx": 0.0, "dy": 0.0, "rot": 0.0, "sx": 1.0, "sy": 1.0,
+                         "blink": 0.0})
+            if self._hearts:
+                # hearts are still floating: keep ticking until they fade
+                self._advance_hearts(step)
+                self.update()
+            else:
+                self._anim_timer.stop()
+                self._schedule_next()
+        else:
+            self._episode = (kind, elapsed, duration)
+        self._advance_hearts(step)
+        self.update()
+
+    def _advance_hearts(self, step: float) -> None:
+        if not self._hearts:
+            return
+        alive = []
+        for heart in self._hearts:
+            heart[3] += step          # age
+            heart[1] -= step * 26.0   # rise
+            if heart[3] < 1.5:
+                alive.append(heart)
+        self._hearts = alive
+
+    def spawn_hearts(self, count: int = 3) -> None:
+        if not self._anim_cfg["enabled"] or not self._anim_cfg["hearts"] or self._frozen:
+            return
+        band = FACE_BAND.get(self._state.value)
+        if band is None:
+            return
+        cx, top, height, width = band
+        for _ in range(count):
+            self._hearts.append([
+                cx + random.uniform(-width * 0.34, width * 0.34),
+                top - random.uniform(4, 26),
+                random.uniform(6.0, 11.0),
+                0.0,
+            ])
+        if not self._anim_timer.isActive():
+            self._anim_timer.start()
+
+    def _eyelid(self) -> QColor:
+        """Skin colour sampled just under the eyes, so lids blend in."""
+        key = self._state.value
+        cached = self._eyelid_colour.get(key)
+        if cached is not None:
+            return cached
+        colour = QColor(240, 224, 224)
+        if self._pixmap is not None:
+            band = FACE_BAND.get(key)
+            if band:
+                cx, top, height, width = band
+                scale = self._pixmap.width() / max(1, self._assets.canvas.width())
+                image = self._pixmap.toImage()
+                y = int((top + height * 0.86) * scale)
+                samples = []
+                for offset in (-0.22, 0.22):
+                    x = int((cx + width * offset) * scale)
+                    if 0 <= x < image.width() and 0 <= y < image.height():
+                        pixel = image.pixelColor(x, y)
+                        if pixel.alpha() > 120:
+                            samples.append(pixel)
+                if samples:
+                    colour = QColor(
+                        sum(p.red() for p in samples) // len(samples),
+                        sum(p.green() for p in samples) // len(samples),
+                        sum(p.blue() for p in samples) // len(samples),
+                    )
+        self._eyelid_colour[key] = colour
+        return colour
+
+    def _draw_blink(self, painter: QPainter, scale: float) -> None:
+        band = FACE_BAND.get(self._state.value)
+        if band is None:
+            return
+        cx, top, height, width = band
+        lid = self._eyelid()
+        line = QColor(max(0, lid.red() - 90), max(0, lid.green() - 90),
+                      max(0, lid.blue() - 90))
+        eye_w = width * 0.20 * scale
+        eye_h = height * 0.20 * scale
+        eye_y = (top + height * 0.30) * scale
+        for offset in (-0.22, 0.22):
+            x = (cx + width * offset) * scale
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(lid)
+            painter.drawEllipse(QPoint(int(x), int(eye_y)),
+                                int(eye_w * 0.5), int(eye_h * 0.5))
+            pen = QPen(line, max(1.0, 1.6 * scale))
+            painter.setPen(pen)
+            painter.drawLine(int(x - eye_w * 0.42), int(eye_y),
+                             int(x + eye_w * 0.42), int(eye_y))
+
+    def _draw_hearts(self, painter: QPainter, scale: float) -> None:
+        for x, y, size, age in self._hearts:
+            fade = max(0.0, min(1.0, 1.25 - age))
+            colour = QColor(HEART_COLOUR)
+            colour.setAlphaF(0.85 * fade)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(colour)
+            self._draw_heart(painter, x * scale, y * scale, size * scale)
 
     def _decay_blush(self) -> None:
         step = max(0.02, 45.0 / max(200.0, float(self._config.get("pet.blush_ms", 1400))))

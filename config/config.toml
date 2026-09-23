@@ -122,6 +122,21 @@ timeout_s = 60           # per command
 max_output_chars = 4000  # command output fed back to the model
 approval_timeout_s = 120 # an unanswered prompt counts as "no"
 
+[animation]
+# He fidgets in short episodes - a blink, a little sway, a curious look - with
+# quiet gaps in between. The animation timer stops completely between episodes,
+# so an idle companion is genuinely idle: measured 0 CPU ticks with this off and
+# ~0.4% of one core with it on (10 fps, 4.5 s gaps). Gaming mode freezes it.
+enabled = true
+fps = 10                  # frame rate while an episode runs
+idle_gap_ms = 4500        # average quiet time between fidgets
+amplitude_px = 2.0        # how far he sways
+chill = true              # breathing / body sway
+blink = true              # quick blink (only on poses drawn with open eyes)
+curious = true            # occasional look-around
+hearts = true             # hearts float up while petted
+reduce_in_gaming = true   # freeze animations in gaming mode
+
 [pet]
 # clicking him pets him: blush + floating hearts + a purr line in the bubble
 # (text only, no sound). Holding the mouse down keeps him purring and the purr

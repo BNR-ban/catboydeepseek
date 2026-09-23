@@ -29,6 +29,31 @@ the actual answer, command or fix, and the persona never pads a short answer int
 a long one. Never explicit, just affectionate. His whole voice lives in one
 config string (`[prompt] system_prompt`), so you can rewrite him however you like.
 
+**He is alive, not a sticker.** ![animation](docs/animation.gif)
+
+While nothing is happening he fidgets in short episodes — a blink, a slow
+breathing sway, an occasional curious look around — and then goes completely
+still again. Click him and he reacts: a little squish, blush, hearts floating up,
+a purr line. Change his state and he pops. Hover him and he lifts slightly.
+
+It stays cheap on purpose: animation **only runs in short episodes** (the timer
+is stopped between them), at 10 fps, and it is frozen entirely in gaming mode.
+Measured on the development machine: **0 CPU ticks over 15 s with animation off,
+6 ticks with it on — about 0.4% of one core**, and an unchanged ~62 MB RSS.
+
+```toml
+[animation]
+enabled = true
+fps = 10                 # frame rate while an episode runs
+idle_gap_ms = 4500       # average quiet time between fidgets
+amplitude_px = 2.0       # how far he sways
+chill = true             # breathing / body sway
+blink = true             # quick blink (only on poses with open eyes)
+curious = true           # occasional look-around
+hearts = true            # hearts while petted
+reduce_in_gaming = true  # freeze animations in gaming mode
+```
+
 **He behaves like a cat.** Click him and he blushes — soft pink on his cheeks,
 hearts drifting up, and a purr line in his bubble:
 
@@ -447,15 +472,18 @@ Windows and macOS will differ, but nothing here is Linux-specific):
 
 | Metric | Value |
 |---|---|
-| idle CPU | **0 CPU-ticks over 15 s** (0.0 % of one core) |
-| memory | ~62 MB RSS (32-48 MB PSS depending on what else uses Qt) |
+| idle CPU, animation off | **0 CPU-ticks over 15 s** (0.00 % of one core) |
+| idle CPU, animation on | **3 ticks over 15 s** (0.20 % of one core) |
+| memory | ~70-85 MB RSS (55-70 MB PSS) |
 | threads | 7 (Qt's pool + one blocked hotkey listener) |
 | redraws while idle | none — the window repaints only when the state changes |
 
 How that is achieved, and what was deliberately avoided:
 
-* **no animation loop** — the state pixmap is painted in `paintEvent` and
-  nothing schedules another frame;
+* **no free-running animation loop** — fidgets run as short episodes (a blink, a
+  sway) with the timer *stopped* in between, at 10 fps, and are frozen entirely
+  in gaming mode; between episodes and with animation off there is literally
+  nothing scheduled;
 * **no polling** — the state machine uses single-shot timers that only exist
   while a request is in flight; the global hotkey listener blocks in `select()`
   on its own X connection and wakes only when a key is pressed;
@@ -470,7 +498,7 @@ How that is achieved, and what was deliberately avoided:
 Reproduce the numbers yourself:
 
 ```bash
-python3 scripts/selftest.py --visual     # 52 checks + screenshots of every state
+python3 scripts/selftest.py --visual     # 59 checks + screenshots of every state
 ```
 
 ## Platform notes
@@ -597,7 +625,7 @@ entry if you ever want it gone.
 ## Self test
 
 ```bash
-python3 scripts/selftest.py            # 52 checks against a local fake DeepSeek server
+python3 scripts/selftest.py            # 59 checks against a local fake DeepSeek server
 python3 scripts/selftest.py --visual   # + screenshots of all six states and a full lifecycle
 ```
 
