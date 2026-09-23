@@ -541,7 +541,7 @@ How that is achieved, and what was deliberately avoided:
 Reproduce the numbers yourself:
 
 ```bash
-python3 scripts/selftest.py --visual     # 55 checks + screenshots of every state
+python3 scripts/selftest.py --visual     # 71 checks + screenshots of every state
 ```
 
 ## Platform notes
@@ -668,7 +668,7 @@ entry if you ever want it gone.
 ## Self test
 
 ```bash
-python3 scripts/selftest.py            # 55 checks against a local fake DeepSeek server
+python3 scripts/selftest.py            # 71 checks against a local fake DeepSeek server
 python3 scripts/selftest.py --visual   # + screenshots of all six states and a full lifecycle
 ```
 

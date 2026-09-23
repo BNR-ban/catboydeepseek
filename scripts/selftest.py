@@ -196,6 +196,33 @@ def start_server() -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
+RAN: set[str] = set()
+EXPECTED: set[str] = set()
+
+#: Scenarios that legitimately do not run in every environment.  s8_verify only
+#: makes sense when a global hotkey grab was actually available - another
+#: companion instance holding Ctrl+Shift+Space makes it impossible to test, and
+#: the suite says "skipped" instead of pretending.
+CONDITIONAL: set[str] = {"s8_verify"}
+
+
+def scenario(fn):
+    """Mark a scenario so the suite can prove every one of them actually ran.
+
+    The scenarios hand off to each other with wait(...), which is easy to break
+    when inserting a new step - and a silently skipped scenario looks like a
+    passing suite.  This makes that impossible.
+    """
+    EXPECTED.add(fn.__name__)
+
+    def wrapper(*args, **kwargs):
+        RAN.add(fn.__name__)
+        return fn(*args, **kwargs)
+
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
 class Recorder:
     def __init__(self, companion: Companion):
         self.events: list[tuple[float, str]] = []
@@ -351,10 +378,12 @@ def run(visual: bool = False) -> int:
     check("request payload has no duplicated question", check_payload())
     check("summary marker never leaks, inline or repeated", check_summary_split())
 
+    @scenario
     def s0_greeting():
         """He says hi when he first appears, proud, then waits."""
         wait(500, s0_verify)
 
+    @scenario
     def s0_verify():
         lines = [str(x) for x in companion.config.get("startup.greeting_lines", [])]
         check("he greets you when he appears",
@@ -366,6 +395,7 @@ def run(visual: bool = False) -> int:
               f"state={companion.machine.state.value}")
         wait(1300, s0_settle)
 
+    @scenario
     def s0_settle():
         check("after the hello he goes back to waiting",
               companion.machine.state is State.LISTENING,
@@ -373,6 +403,7 @@ def run(visual: bool = False) -> int:
         companion.bubble.dismiss()
         wait(100, s1_normal)
 
+    @scenario
     def s1_normal():
         recorder.reset()
         MODE.update(delay_before_first_token=0.0, chunks=REPLY, status=200,
@@ -380,6 +411,7 @@ def run(visual: bool = False) -> int:
         companion.submit("hello")
         wait(1800, s1_verify)
 
+    @scenario
     def s1_verify():
         seq = recorder.sequence()
         results["normal"] = seq
@@ -399,6 +431,7 @@ def run(visual: bool = False) -> int:
               f"bubble visible={companion.bubble.isVisible()} text={companion.bubble.text!r}")
         wait(200, s2_slow)
 
+    @scenario
     def s2_slow():
         recorder.reset()
         companion.config.set("behavior.thinking_longer_ms", 300)  # force the switch
@@ -406,6 +439,7 @@ def run(visual: bool = False) -> int:
         companion.submit("slow one")
         wait(2400, s2_verify)
 
+    @scenario
     def s2_verify():
         seq = recorder.sequence()
         results["slow"] = seq
@@ -414,6 +448,7 @@ def run(visual: bool = False) -> int:
               str(seq))
         wait(200, s3_error)
 
+    @scenario
     def s3_error():
         recorder.reset()
         MODE.update(delay_before_first_token=0.0, chunks=[], status=429, body="slow down")
@@ -421,6 +456,7 @@ def run(visual: bool = False) -> int:
         companion.submit("rate limited")
         wait(1200, s3_verify)
 
+    @scenario
     def s3_verify():
         seq = recorder.sequence()
         results["error"] = seq
@@ -436,6 +472,7 @@ def run(visual: bool = False) -> int:
               f"assistant turns {results.get('assistant_before')} -> {after}")
         wait(200, s4_missing_key)
 
+    @scenario
     def s4_missing_key():
         recorder.reset()
         os.environ.pop("DEEPSEEK_API_KEY", None)
@@ -443,6 +480,7 @@ def run(visual: bool = False) -> int:
         companion.submit("no key here")
         wait(400, s4_verify)
 
+    @scenario
     def s4_verify():
         check("missing key reported, not a crash",
               "No API key" in companion.chat.status.text(), companion.chat.status.text())
@@ -450,6 +488,7 @@ def run(visual: bool = False) -> int:
         os.environ["DEEPSEEK_API_KEY"] = "test-key"
         wait(150, s4b_api_key)
 
+    @scenario
     def s4b_api_key():
         os.environ.pop("DEEPSEEK_API_KEY", None)
         key_file = workdir / "api_key"
@@ -464,6 +503,7 @@ def run(visual: bool = False) -> int:
         companion.chat._emit_key()
         wait(250, lambda: s4b_verify(key_file, was_visible))
 
+    @scenario
     def s4b_verify(key_file: Path, was_visible: bool):
         mode = oct(key_file.stat().st_mode & 0o777) if key_file.exists() else "missing"
         check("pasted API key is stored in a 0600 file",
@@ -476,6 +516,7 @@ def run(visual: bool = False) -> int:
               was_visible and not companion.chat.key_row.isVisible())
         wait(600, s4c_model)
 
+    @scenario
     def s4c_model():
         """A model that does not exist must switch to one that does."""
         companion.config.set("api.model", "deepseek-v4.1-flash-max")
@@ -485,6 +526,7 @@ def run(visual: bool = False) -> int:
         companion.submit("hello?")
         wait(1500, s4c_verify)
 
+    @scenario
     def s4c_verify():
         model = companion.config.get("api.model")
         check("unknown model switches to one the key can use",
@@ -499,8 +541,9 @@ def run(visual: bool = False) -> int:
               and companion.chat.current_model() == model,
               f"combo={[companion.chat.model_combo.itemText(i) for i in range(companion.chat.model_combo.count())]}")
         MODE.update(error_kind=None, status=200)
-        wait(150, s4g_commands)
+        wait(150, s4c2_attachments)
 
+    @scenario
     def s4c2_attachments():
         """Files (text + image) ride along with the message."""
         files = workdir / "files"
@@ -546,6 +589,7 @@ def run(visual: bool = False) -> int:
         companion.set_model("deepseek-flash")
         wait(150, s4d_agent_tools)
 
+    @scenario
     def s4d_agent_tools():
         """The agent loop: tool call -> executed -> answered."""
         workdir_ws = workdir / "ws"
@@ -563,6 +607,7 @@ def run(visual: bool = False) -> int:
         companion.submit("write a note for me")
         wait(2500, s4d_verify)
 
+    @scenario
     def s4d_verify():
         note = workdir / "ws" / "agent-note.txt"
         sent_tools = [bool(r.get("tools")) for r in MODE["requests"]]
@@ -580,6 +625,7 @@ def run(visual: bool = False) -> int:
               companion.chat.answer.toPlainText()[:80])
         wait(150, s4e_agent_deny)
 
+    @scenario
     def s4e_agent_deny():
         """Deny: the tool must not run, and the model is told so."""
         MODE["requests"].clear()
@@ -592,10 +638,12 @@ def run(visual: bool = False) -> int:
         companion.submit("try to write the denied note")
         wait(700, s4e_answer)
 
+    @scenario
     def s4e_answer():
         companion.chat._decide("deny")  # answer the prompt
         wait(1800, s4e_verify)
 
+    @scenario
     def s4e_verify():
         denied = workdir / "ws" / "denied-note.txt"
         contents = [m.get("content", "") for r in MODE["requests"]
@@ -606,6 +654,7 @@ def run(visual: bool = False) -> int:
               f"tool messages={contents}")
         wait(150, s4f_agent_off)
 
+    @scenario
     def s4f_agent_off():
         """Off: no tools are sent at all, and no markup leaks through."""
         MODE["requests"].clear()
@@ -615,6 +664,7 @@ def run(visual: bool = False) -> int:
         companion.submit("list my files")
         wait(1500, s4f_verify)
 
+    @scenario
     def s4f_verify():
         no_tools = all(not r.get("tools") for r in MODE["requests"])
         answer = companion.last_answer or ""
@@ -623,8 +673,9 @@ def run(visual: bool = False) -> int:
         check("leaked tool markup never reaches the user",
               "DSML" not in answer and "｜" not in answer, repr(answer[:80]))
         companion.set_access_mode("full")
-        wait(150, s5_clickthrough)
+        wait(150, s4g_commands)
 
+    @scenario
     def s4g_commands():
         """Slash commands act locally and never reach the API."""
         MODE["requests"].clear()
@@ -671,6 +722,7 @@ def run(visual: bool = False) -> int:
         companion.set_access_mode("full")
         wait(150, s5_clickthrough)
 
+    @scenario
     def s5_clickthrough():
         if not x11.is_x11():
             check("click-through (skipped: not X11)", True)
@@ -681,6 +733,7 @@ def run(visual: bool = False) -> int:
         companion.character.set_click_through(True)
         wait(300, s5_verify)
 
+    @scenario
     def s5_verify():
         wid = int(companion.character.winId())
         results["shape_on"] = x11.input_shape_is_empty(wid)
@@ -690,6 +743,7 @@ def run(visual: bool = False) -> int:
         companion.character.set_click_through(False)
         wait(200, s6_geometry)
 
+    @scenario
     def s6_geometry():
         # a window manager may place a freshly mapped window itself and only
         # settle a moment later, so give it a beat before judging the position
@@ -705,12 +759,14 @@ def run(visual: bool = False) -> int:
               f"{len(companion.assets)} states")
         wait(50, s7_idle)
 
+    @scenario
     def s7_idle():
         """Measure CPU time of this process while the companion just sits there."""
         global _cpu_start
         _cpu_start = os.times()
         wait(2000, s7_verify)
 
+    @scenario
     def s7_verify():
         end = os.times()
         used = (end.user - _cpu_start.user) + (end.system - _cpu_start.system)
@@ -718,6 +774,7 @@ def run(visual: bool = False) -> int:
         check("idle CPU usage is negligible over 2 s", used < 0.15, f"{used * 100:.1f}% of one core")
         wait(50, s8_hotkey)
 
+    @scenario
     def s8_hotkey():
         if not x11.is_x11() or not companion.hotkeys.available:
             check("global hotkey (skipped)", True, companion.hotkeys.error or "not X11")
@@ -735,6 +792,7 @@ def run(visual: bool = False) -> int:
             return
         wait(900, lambda: s8_verify(before))
 
+    @scenario
     def s8_verify(before: bool):
         after = companion.chat.isVisible()
         char_after = companion.character.isVisible()
@@ -745,6 +803,7 @@ def run(visual: bool = False) -> int:
               f"character {results.get('character_before')}->{char_after}")
         wait(50, s8b_pet)
 
+    @scenario
     def s8b_pet():
         """Clicking him pets him, opens the little box, and never un-pets badly."""
         check("the input box stays closed until he is clicked", box_closed_at_start,
@@ -784,6 +843,7 @@ def run(visual: bool = False) -> int:
             clicked_for_real = False
         wait(200, lambda: s8b_verify(clicked_for_real, box_before))
 
+    @scenario
     def s8b2_follow():
         """The box must follow him, and a plain click must not pin it."""
         from PyQt5.QtTest import QTest
@@ -810,6 +870,7 @@ def run(visual: bool = False) -> int:
               f"(character {companion.character.x()},{companion.character.y()})")
         wait(150, s8c_pet_hold)
 
+    @scenario
     def s8c_pet_hold():
         """Holding the mouse down must keep him purring, growing the purr."""
         lines = companion.config.get("pet.lines", [])
@@ -844,6 +905,7 @@ def run(visual: bool = False) -> int:
         companion.chat.hide_panel()
         wait(150, s8c2_animation)
 
+    @scenario
     def s8c2_animation():
         """Animations must move him, stop again, and freeze in gaming mode."""
         character = companion.character
@@ -879,6 +941,7 @@ def run(visual: bool = False) -> int:
         character.set_frozen(False)
         wait(150, s8d_transparency)
 
+    @scenario
     def s8d_transparency():
         """Text must not be clipped by the tiny widgets."""
         from dscompanion.chat import document_line_height
@@ -914,6 +977,7 @@ def run(visual: bool = False) -> int:
               f"bubble.background_alpha={bubble_alpha}")
         wait(100, s9_visual)
 
+    @scenario
     def s8b_verify(clicked_for_real: bool, box_before: bool):
         # a click toggles the box: closed -> open, or open -> closed
         check("clicking him toggles the little input box (real mouse click)",
@@ -931,6 +995,7 @@ def run(visual: bool = False) -> int:
         companion.chat.hide_panel()
         wait(150, s8b2_follow)
 
+    @scenario
     def s9_visual():
         if not visual:
             finish()
@@ -1002,6 +1067,9 @@ def run(visual: bool = False) -> int:
         return out
 
     def finish():
+        missing = sorted(EXPECTED - RAN - CONDITIONAL)
+        check("every scenario actually ran (no silent skips)", not missing,
+              f"missing: {missing}" if missing else f"{len(RAN)} scenarios")
         companion.shutdown()
         server.shutdown()
         app.quit()
