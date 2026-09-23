@@ -444,6 +444,7 @@ The settings most people touch:
 | `hotkeys.toggle_ui` | `ctrl+shift+space` | global show/hide |
 | `hotkeys.toggle_click_through` | `ctrl+shift+t` | global click-through toggle |
 | `gaming.*` | off | see below |
+| `gaming.click_through_handle` | `true` | keep his name pill grabbable in gaming mode |
 | `integration.watch_processes` | `false` | optional /proc peek (see below) |
 
 ## Desktop access (he can actually do things)
@@ -495,8 +496,18 @@ companion into a background ornament:
 * stops showing the chat panel (`gaming.hide_chat`)
 * makes the character click-through so it never eats a mouse event
   (`gaming.click_through`)
+* **keeps a small grabbable handle** — his name pill at the bottom still accepts
+  the mouse (72×30 by default), so you can drag him around and **a click on it
+  leaves gaming mode**. Everything outside that rectangle passes straight
+  through to your game
+* tells you how to get him back in a bubble when it switches on
 * scales and fades it (`gaming.scale`, `gaming.opacity`)
-* keeps `Ctrl+Shift+Space` alive to bring the interface back
+* keeps `Ctrl+Shift+Space` alive as the always-works way back
+
+Turn `gaming.click_through_handle` off for the classic full click-through (then
+only the hotkey brings him back — the way out is in the bubble it shows).
+Partial input regions are an X11 feature; on Windows and macOS gaming mode is
+all-or-nothing, which the bubble says too.
 
 Nothing else changes, because there is nothing else running: no animations, no
 polling, no network activity while idle.
@@ -541,7 +552,7 @@ How that is achieved, and what was deliberately avoided:
 Reproduce the numbers yourself:
 
 ```bash
-python3 scripts/selftest.py --visual     # 71 checks + screenshots of every state
+python3 scripts/selftest.py --visual     # 77 checks + screenshots of every state
 ```
 
 ## Platform notes
@@ -668,7 +679,7 @@ entry if you ever want it gone.
 ## Self test
 
 ```bash
-python3 scripts/selftest.py            # 71 checks against a local fake DeepSeek server
+python3 scripts/selftest.py            # 77 checks against a local fake DeepSeek server
 python3 scripts/selftest.py --visual   # + screenshots of all six states and a full lifecycle
 ```
 

@@ -741,9 +741,56 @@ def run(visual: bool = False) -> int:
               results.get("shape_on") is True and results.get("shape_off") is False,
               f"off={results.get('shape_off')} on={results.get('shape_on')}")
         companion.character.set_click_through(False)
-        wait(200, s6_geometry)
+        wait(200, s5b_gaming_handle)
 
     @scenario
+    def s5b_gaming_handle():
+        """Gaming mode must never trap him: a grabbable handle stays clickable."""
+        if not x11.is_x11():
+            check("gaming mode keeps a grab handle (skipped: not X11)", True)
+            wait(50, s6_geometry)
+            return
+        companion.set_gaming(True)
+        wait(400, s5b_verify)
+
+    def s5b_verify():
+        wid = int(companion.character.winId())
+        rects = x11.input_shape_rects(wid) or []
+        handle = companion.character.click_handle
+        check("gaming mode keeps a grabbable handle",
+              len(rects) == 1 and handle is not None and rects[0] == handle,
+              f"rects={rects} handle={handle}")
+        check("gaming mode says how to get him back",
+              "gaming mode on" in companion.bubble.text
+              and "Ctrl+Shift+Space" in companion.bubble.text,
+              repr(companion.bubble.text))
+        check("clicks outside the handle pass through to the game",
+              x11.input_shape_is_empty(wid) is not True and len(rects) == 1)
+
+        # clicking him is the way out
+        companion.toggle_ui()
+        wait(250, s5b_exit)
+
+    def s5b_exit():
+        check("clicking his handle leaves gaming mode", not companion.gaming,
+              f"gaming={companion.gaming}")
+        check("the mouse works normally again after gaming mode",
+              companion.character.click_through is False)
+
+        # and with the handle switched off it is the classic full click-through
+        companion.config.set("gaming.click_through_handle", False)
+        companion.set_gaming(True)
+        wait(300, s5b_full)
+
+    def s5b_full():
+        wid = int(companion.character.winId())
+        check("without the handle gaming mode is fully click-through",
+              x11.input_shape_is_empty(wid) is True,
+              f"rects={x11.input_shape_rects(wid)}")
+        companion.set_gaming(False)
+        companion.config.set("gaming.click_through_handle", True)
+        wait(200, s6_geometry)
+
     def s6_geometry():
         # a window manager may place a freshly mapped window itself and only
         # settle a moment later, so give it a beat before judging the position

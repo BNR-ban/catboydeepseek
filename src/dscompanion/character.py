@@ -87,6 +87,7 @@ class CharacterWindow(QWidget):
         self._state = State.LISTENING
         self._scale = float(config.get("character.scale", 1.0))
         self._click_through = False
+        self._click_handle: tuple[int, int, int, int] | None = None
         self._gaming = False
         self._drag_offset: QPoint | None = None
         self._press_pos: QPoint | None = None
@@ -383,13 +384,30 @@ class CharacterWindow(QWidget):
         self.show()  # re-mapping is required for the WM to notice the change
         self.ensure_sticky(150)
 
-    def set_click_through(self, on: bool) -> None:
-        """Let mouse events fall through to whatever is underneath."""
-        if on == self._click_through:
+    def set_click_through(self, on: bool, handle: tuple[int, int, int, int] | None = None) -> None:
+        """Let mouse events fall through, optionally keeping a grab handle."""
+        if on == self._click_through and handle == self._click_handle:
             return
         self._click_through = on
-        desktop.set_click_through(self, on)   # Qt flag + per-OS extras
+        self._click_handle = handle if on else None
+        desktop.set_click_through(self, on, handle)   # Qt flag + per-OS extras
         self.ensure_sticky(150)
+
+    @property
+    def click_handle(self) -> tuple[int, int, int, int] | None:
+        """The rectangle that still accepts the mouse, if any."""
+        return self._click_handle
+
+    def handle_rect(self, width: int = 72, height: int = 30) -> tuple[int, int, int, int]:
+        """Bottom-centre hotspot: over the name pill, where the art is solid."""
+        return ((self.width() - width) // 2, self.height() - height - 4, width, height)
+
+    def pos_in_handle(self, pos: QPoint) -> bool:
+        handle = self._click_handle
+        if not handle:
+            return False
+        x, y, width, height = handle
+        return x <= pos.x() <= x + width and y <= pos.y() <= y + height
 
     @property
     def click_through(self) -> bool:

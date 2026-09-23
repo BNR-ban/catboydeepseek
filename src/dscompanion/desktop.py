@@ -81,12 +81,27 @@ def have_compositor() -> bool:
     return x11.have_compositor()
 
 
-def set_click_through(widget, on: bool) -> None:
-    """Let mouse events fall through the window (best effort per platform)."""
-    widget.setWindowFlag(Qt.WindowTransparentForInput, on)
+def supports_input_handle() -> bool:
+    """Whether a *partial* click-through (a grabbable handle) is possible."""
+    return x11.is_x11()
+
+
+def set_click_through(widget, on: bool, handle: tuple[int, int, int, int] | None = None) -> None:
+    """Let mouse events fall through the window (best effort per platform).
+
+    With `handle` on X11 only that rectangle accepts the mouse, so a gaming
+    companion never eats clicks meant for the game while still being draggable.
+    Platforms without partial input regions get all-or-nothing click-through
+    (and the app tells the user how to get him back).
+    """
+    partial = bool(on and handle and supports_input_handle())
+    widget.setWindowFlag(Qt.WindowTransparentForInput, on and not partial)
     widget.show()
     if x11.is_x11():
-        x11.set_input_shape_empty(int(widget.winId()), on)
+        if partial:
+            x11.set_input_shape_rect(int(widget.winId()), handle)
+        else:
+            x11.set_input_shape_empty(int(widget.winId()), on)
     elif WINDOWS:
         _windows_click_through(int(widget.winId()), on)
 

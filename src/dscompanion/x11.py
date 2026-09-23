@@ -111,6 +111,72 @@ def set_input_shape_empty(win_id: int, empty: bool) -> bool:
     return True
 
 
+def set_input_shape_rect(win_id: int, rect: tuple[int, int, int, int] | None) -> bool:
+    """Accept mouse input only inside `rect` (window coordinates).
+
+    Used by gaming mode: the character must not eat clicks meant for the game,
+    but a small handle has to stay grabbable so he can still be moved.
+    """
+    if not _load() or not win_id:
+        return False
+
+    class XRectangle(ctypes.Structure):
+        _fields_ = [
+            ("x", ctypes.c_short),
+            ("y", ctypes.c_short),
+            ("width", ctypes.c_ushort),
+            ("height", ctypes.c_ushort),
+        ]
+
+    _xext.XShapeCombineRectangles.restype = ctypes.c_int
+    _xext.XShapeCombineRectangles.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.POINTER(XRectangle), ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ]
+    rects = (XRectangle * 1)()
+    count = 0
+    if rect is not None:
+        x, y, width, height = rect
+        rects[0].x, rects[0].y = x, y
+        rects[0].width, rects[0].height = max(1, width), max(1, height)
+        count = 1
+    _xext.XShapeCombineRectangles(
+        ctypes.c_void_p(_display), ctypes.c_ulong(win_id), SHAPE_INPUT, 0, 0,
+        rects, count, SHAPE_SET, SHAPE_UNSORTED,
+    )
+    _lib.XFlush(ctypes.c_void_p(_display))
+    return True
+
+
+def input_shape_rects(win_id: int) -> Optional[list[tuple[int, int, int, int]]]:
+    """The window's input rectangles ([] = nothing accepts input)."""
+    if not _load() or not win_id:
+        return None
+
+    class XRectangle(ctypes.Structure):
+        _fields_ = [
+            ("x", ctypes.c_short),
+            ("y", ctypes.c_short),
+            ("width", ctypes.c_ushort),
+            ("height", ctypes.c_ushort),
+        ]
+
+    _xext.XShapeGetRectangles.restype = ctypes.POINTER(XRectangle)
+    _xext.XShapeGetRectangles.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int,
+        ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+    ]
+    count = ctypes.c_int(0)
+    ordering = ctypes.c_int(0)
+    ptr = _xext.XShapeGetRectangles(
+        ctypes.c_void_p(_display), ctypes.c_ulong(win_id), SHAPE_INPUT,
+        ctypes.byref(count), ctypes.byref(ordering),
+    )
+    if not ptr:
+        return []
+    return [(ptr[i].x, ptr[i].y, ptr[i].width, ptr[i].height) for i in range(count.value)]
+
+
 def input_shape_is_empty(win_id: int) -> Optional[bool]:
     """Verify click-through. None = cannot tell (no X11 / no shape extension).
 

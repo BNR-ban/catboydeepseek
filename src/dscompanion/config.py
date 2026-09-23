@@ -241,6 +241,12 @@ DEFAULTS: dict[str, Any] = {
         "enabled": False,
         "hide_chat": True,
         "click_through": True,
+        # keep a small grabbable hotspot (his name pill) so he never eats game
+        # clicks but can still be dragged, and clicking it leaves gaming mode
+        "click_through_handle": True,
+        "handle_size": [72, 30],
+        # tell you how to get him back when gaming mode turns on
+        "notify": True,
         "hide_character": False,
         "scale": 0.85,
         "opacity": 0.9,

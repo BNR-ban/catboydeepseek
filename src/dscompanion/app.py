@@ -759,7 +759,9 @@ class Companion(QObject):
     def toggle_ui(self) -> None:
         """Clicking the character (or the hotkey) shows the little input box."""
         if self.gaming:
+            # a click on his handle is the way out of gaming mode
             self.set_gaming(False)
+            self._show_bubble("gaming mode off ♡", 2500)
             return
         if not self.chat_enabled():
             # character-only setup: a click still pets him, the hotkey hides him
@@ -807,7 +809,7 @@ class Companion(QObject):
     def set_click_through(self, on: bool) -> None:
         self._normal_click_through = on
         self.config.set("character.click_through", on)
-        self.character.set_click_through(on)
+        self.character.set_click_through(on, None)
         self._save_config_later()
         self.chat.set_status("Click-through " + ("on" if on else "off"))
 
@@ -825,8 +827,17 @@ class Companion(QObject):
                     float(self.config.get("gaming.scale", 0.85)), emit=False
                 )
                 self.character.set_opacity(float(self.config.get("gaming.opacity", 0.9)))
-            self.character.set_click_through(bool(self.config.get("gaming.click_through", True)))
+            click_through = bool(self.config.get("gaming.click_through", True))
+            handle = None
+            if click_through and self.config.get("gaming.click_through_handle", True):
+                width, height = (self.config.get("gaming.handle_size", [72, 30]) + [72, 30])[:2]
+                handle = self.character.handle_rect(int(width), int(height))
+            self.character.set_click_through(click_through, handle)
             self.character.set_always_on_top(True)
+            if self.config.get("gaming.notify", True):
+                how = ("drag his name pill or press Ctrl+Shift+Space"
+                       if handle else "press Ctrl+Shift+Space")
+                self._show_bubble(f"gaming mode on — {how} to get me back", 5000)
         else:
             self.character.set_scale(float(self.config.get("character.scale", 1.0)), emit=False)
             self.character.set_opacity(float(self.config.get("character.opacity", 1.0)))

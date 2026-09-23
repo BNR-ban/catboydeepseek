@@ -200,7 +200,10 @@ error_notice_ms = 6000
 [gaming]
 enabled = false
 hide_chat = true
-click_through = true
+click_through = true            # never eat clicks meant for the game
+click_through_handle = true     # ...but keep his name pill grabbable
+handle_size = [72, 30]          # the hotspot you can still drag him by
+notify = true                   # bubble telling you how to get him back
 hide_character = false
 scale = 0.85
 opacity = 0.9
