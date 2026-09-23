@@ -319,6 +319,7 @@ auto_switch_model = true
 | `Enter` in the input | send |
 | `Shift + Enter` | newline |
 | `Esc` in the input | stop the current answer |
+| Type `/` in the input | slash commands (gaming, access, model, …) |
 
 The box is deliberately tiny and nearly invisible — you mostly see the words
 floating on your desktop, not a window. Set `chat.background_alpha` to `0` for
@@ -331,6 +332,39 @@ window" feel completely - the character stays the main visual element.
 always next to him when you click. Only if you deliberately drag the *box*
 itself does it stay where you put it (`chat.pinned`); right-click him and choose
 *Let the box follow him again* to undo that.
+
+### Slash commands
+
+Type **`/`** in the box and the status line lists what matches; `/help` prints
+the whole list. Commands are handled locally — they never reach the model and
+never enter the conversation.
+
+| Command | What it does |
+|---|---|
+| `/help` | this list |
+| `/gaming [on|off]` | gaming mode (click-through, chat hidden) |
+| `/access off|ask|full` | desktop access level |
+| `/model [name]` | switch model (no name = refresh the list) |
+| `/models` | refetch the model list from DeepSeek |
+| `/clear` | forget the conversation |
+| `/pet` | pet him |
+| `/say <text>` | put words in his bubble |
+| `/state <name>` | force a pose (debug) |
+| `/scale <n>` | character size, 0.5 - 3 |
+| `/opacity <n>` | character opacity, 0.2 - 1 |
+| `/animation [on|off]` | idle animation on/off |
+| `/sticky [on|off]` | show on every desktop |
+| `/clickthrough [on|off]` | ignore the mouse |
+| `/ontop [on|off]` | always on top |
+| `/key` | paste your API key |
+| `/assets` | reload the character sprites |
+| `/reset` | put him back in the corner |
+| `/hide` | close this box |
+| `/platform` | what this OS supports |
+| `/quit` | close the companion |
+
+Shorthands exist for the common ones: `/full`, `/ask`, `/off` (desktop access),
+`/?`, `/h`, `/q`.
 
 ### Petting him
 
@@ -507,7 +541,7 @@ How that is achieved, and what was deliberately avoided:
 Reproduce the numbers yourself:
 
 ```bash
-python3 scripts/selftest.py --visual     # 60 checks + screenshots of every state
+python3 scripts/selftest.py --visual     # 55 checks + screenshots of every state
 ```
 
 ## Platform notes
@@ -634,7 +668,7 @@ entry if you ever want it gone.
 ## Self test
 
 ```bash
-python3 scripts/selftest.py            # 60 checks against a local fake DeepSeek server
+python3 scripts/selftest.py            # 55 checks against a local fake DeepSeek server
 python3 scripts/selftest.py --visual   # + screenshots of all six states and a full lifecycle
 ```
 

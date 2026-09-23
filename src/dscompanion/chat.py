@@ -705,6 +705,13 @@ class ChatPanel(QWidget):
         self.access_combo.blockSignals(blocked)
         self._relayout()
 
+    def show_help(self, text: str) -> None:
+        """Print the command list in the answer area (it is just text)."""
+        self.answer.setPlainText(text)
+        self.answer.show()
+        self._fit_answer()
+        self._relayout()
+
     def note_tool(self, text: str) -> None:
         """Write a one-line record of a tool call into the answer area."""
         self.answer.show()

@@ -33,6 +33,7 @@ from PyQt5.QtCore import QObject, QSocketNotifier, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QAction, QActionGroup, QApplication, QMenu
 
 from . import autostart
+from . import commands
 from .agent import AgentWorker, has_tool_markup, strip_tool_markup
 from .api import APIError, ChatMessage, DeepSeekClient, first_sentence
 from .assets import AssetError, load_assets
@@ -233,6 +234,9 @@ class Companion(QObject):
         self.chat.clear_requested.connect(self.clear_conversation)
         self.chat.hidden_by_user.connect(self._on_chat_hidden)
         self.chat.user_activity.connect(self._on_user_typing)
+        self.chat.input.textChanged.connect(
+            lambda: self._on_command_typing(self.chat.input.toPlainText())
+        )
         self.chat.api_key_entered.connect(self.set_api_key)
         self.chat.model_changed.connect(self.set_model)
         self.chat.attachments_changed.connect(self._on_attachments_changed)
@@ -312,6 +316,15 @@ class Companion(QObject):
     def submit(self, text: str) -> None:
         text = text.strip()
         if not text:
+            return
+        if commands.is_command(text):
+            # local control: never sent to the model, never added to history
+            message = commands.run(self, text)
+            if message:
+                self.chat.set_status(message)
+            else:
+                self.chat.set_status("")           # drop any stale notice
+                self._refresh_status(self.machine.state)
             return
         limit = int(self.config.get("api.max_input_chars", 6000))
         if len(text) > limit:
@@ -724,6 +737,19 @@ class Companion(QObject):
         self.chat.clear_answer()
         self.machine.user_active()
         self._refresh_status(State.LISTENING)
+
+    def _on_command_typing(self, text: str) -> None:
+        """While a slash command is being typed, list what matches."""
+        if not commands.is_command(text):
+            return
+        body = text.lstrip()[1:]
+        if " " in body:
+            return
+        names = commands.matches(body)
+        if not names:
+            self.chat.set_status(f"unknown command — {commands.help_line()}")
+            return
+        self.chat.set_status("  ".join(f"/{name}" for name in names[:8]))
 
     def _on_user_typing(self) -> None:
         if not self.machine.busy and self.machine.state is not State.LISTENING:

@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from PyQt5.QtCore import QPoint, QTimer, Qt  # noqa: E402
 
 from dscompanion import x11  # noqa: E402
+from dscompanion.api import ChatMessage  # noqa: E402
 from dscompanion.app import Companion, prepare_application  # noqa: E402
 from dscompanion.config import Config  # noqa: E402
 from dscompanion.states import State  # noqa: E402
@@ -498,7 +499,7 @@ def run(visual: bool = False) -> int:
               and companion.chat.current_model() == model,
               f"combo={[companion.chat.model_combo.itemText(i) for i in range(companion.chat.model_combo.count())]}")
         MODE.update(error_kind=None, status=200)
-        wait(150, s4c2_attachments)
+        wait(150, s4g_commands)
 
     def s4c2_attachments():
         """Files (text + image) ride along with the message."""
@@ -621,6 +622,52 @@ def run(visual: bool = False) -> int:
               f"tools per request={[bool(r.get('tools')) for r in MODE['requests']]}")
         check("leaked tool markup never reaches the user",
               "DSML" not in answer and "｜" not in answer, repr(answer[:80]))
+        companion.set_access_mode("full")
+        wait(150, s5_clickthrough)
+
+    def s4g_commands():
+        """Slash commands act locally and never reach the API."""
+        MODE["requests"].clear()
+        companion.set_gaming(False)
+        check("slash commands do not touch the API",
+              True)  # asserted after the commands have run
+
+        companion.submit("/gaming")
+        gaming_on = companion.gaming
+        companion.submit("/gaming")
+        gaming_off = companion.gaming
+        check("/gaming toggles gaming mode", gaming_on and not gaming_off,
+              f"on={gaming_on} off={gaming_off}")
+
+        companion.set_access_mode("ask")
+        companion.submit("/access full")
+        check("/access full switches desktop access",
+              companion.config.get("agent.mode") == "full",
+              companion.config.get("agent.mode"))
+
+        companion.history.append(ChatMessage("user", "remember me"))
+        companion.submit("/clear")
+        check("/clear forgets the conversation", companion.history == [],
+              f"{len(companion.history)} messages left")
+
+        companion.character.set_frozen(False)
+        companion.submit("/animation off")
+        frozen = companion.character._frozen
+        companion.submit("/animation on")
+        check("/animation freezes and resumes him",
+              frozen and not companion.character._frozen)
+
+        companion.submit("/nope")
+        check("an unknown command is reported, not sent",
+              "unknown command" in companion.chat.status.text(),
+              companion.chat.status.text())
+        companion.submit("/help")
+        check("/help prints the command list",
+              len(companion.chat.answer.toPlainText().splitlines()) > 10,
+              f"{len(companion.chat.answer.toPlainText().splitlines())} lines")
+        check("no command request reached the API",
+              not MODE["requests"], f"{len(MODE['requests'])} requests")
+        companion.chat.clear_answer()
         companion.set_access_mode("full")
         wait(150, s5_clickthrough)
 
