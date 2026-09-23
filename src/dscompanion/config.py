@@ -101,6 +101,22 @@ DEFAULTS: dict[str, Any] = {
         "approval_timeout_s": 120,
         "max_output_chars": 4000,
     },
+    "startup": {
+        # Say hi when he appears: a proud little pose and a bubble, then he
+        # settles back into LISTENING waiting for you.
+        "greeting": True,
+        "greeting_delay_ms": 700,     # let the window paint first
+        "greeting_hold_ms": 2600,     # how long he stays proud
+        "greeting_state": "proud",
+        "greeting_lines": [
+            "haiii daddy~ ♡",
+            "haiii! i'm here ♡",
+            "nya~ you're back! ♡",
+            "mrrp! hai hai~ ♡",
+            "haiii~ ready when you are ♡",
+            "purr~ hello daddy ♡",
+        ],
+    },
     "animation": {
         # He fidgets in short episodes with quiet gaps in between, so an idle
         # companion still costs nothing: the animation timer stops completely

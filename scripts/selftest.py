@@ -320,6 +320,8 @@ def run(visual: bool = False) -> int:
     # scenario 1 uses a realistic threshold (the very first request also pays
     # the one-off import of the HTTP stack), scenario 2 forces the transition
     cfg.set("behavior.thinking_longer_ms", 1500)
+    cfg.set("startup.greeting_delay_ms", 250)
+    cfg.set("startup.greeting_hold_ms", 900)
     cfg.set("behavior.proud_hold_ms", 250)
     cfg.set("character.x", 60)
     cfg.set("character.y", 60)
@@ -347,6 +349,28 @@ def run(visual: bool = False) -> int:
     # ---------------------------------------------------------------- scenario
     check("request payload has no duplicated question", check_payload())
     check("summary marker never leaks, inline or repeated", check_summary_split())
+
+    def s0_greeting():
+        """He says hi when he first appears, proud, then waits."""
+        wait(500, s0_verify)
+
+    def s0_verify():
+        lines = [str(x) for x in companion.config.get("startup.greeting_lines", [])]
+        check("he greets you when he appears",
+              companion._greeted and companion.bubble.isVisible()
+              and companion.bubble.text in lines,
+              f"bubble={companion.bubble.text!r}")
+        check("the greeting uses the proud pose",
+              companion.machine.state is State.PROUD,
+              f"state={companion.machine.state.value}")
+        wait(1300, s0_settle)
+
+    def s0_settle():
+        check("after the hello he goes back to waiting",
+              companion.machine.state is State.LISTENING,
+              f"state={companion.machine.state.value}")
+        companion.bubble.dismiss()
+        wait(100, s1_normal)
 
     def s1_normal():
         recorder.reset()
@@ -935,8 +959,8 @@ def run(visual: bool = False) -> int:
         server.shutdown()
         app.quit()
 
-    step(s1_normal)
-    QTimer.singleShot(300, s1_normal)
+    step(s0_greeting)
+    QTimer.singleShot(300, s0_greeting)
     app.exec_()
 
     print()

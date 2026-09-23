@@ -71,6 +71,7 @@ class CharacterWindow(QWidget):
     """A frameless, always-on-top window showing the character."""
 
     clicked = pyqtSignal()
+    shown = pyqtSignal()              # first time the window becomes visible
     files_dropped = pyqtSignal(list)  # files dragged onto him
     petted = pyqtSignal()          # a tap: one short purr line
     pet_progress = pyqtSignal(int)  # while held down: 0, 1, 2 ... ticks
@@ -421,6 +422,7 @@ class CharacterWindow(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self.ensure_sticky()
+        self.shown.emit()
         if self._anim_cfg["enabled"] and not self._frozen and not self._episode:
             self._schedule_next()
 

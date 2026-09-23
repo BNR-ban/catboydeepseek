@@ -195,6 +195,7 @@ class Companion(QObject):
         self.worker: AgentWorker | None = None
         self.last_answer = ""
         self.last_summary = ""
+        self._greeted = False
         self._markup_seen = False
         self._answer_parts: list[str] = []
         self.gaming = bool(config.get("gaming.enabled", False))
@@ -239,6 +240,7 @@ class Companion(QObject):
         self.chat.access_changed.connect(self.set_access_mode)
         self.chat.approval_decision.connect(self._on_approval_decision)
         self.character.petted.connect(self._on_petted)
+        self.character.shown.connect(self.greet)
         self.character.files_dropped.connect(self._on_files_dropped)
         self.character.pet_progress.connect(self._on_pet_progress)
 
@@ -272,6 +274,8 @@ class Companion(QObject):
         if self.client.has_key():
             # ask the account which models it really has, quietly, at startup
             QTimer.singleShot(600, self.refresh_models)
+        QTimer.singleShot(int(self.config.get("startup.greeting_delay_ms", 700)),
+                          self.greet)
         if self.config.get("app.chat_visible_on_start", False) and not start_hidden:
             self.chat.move_near(self.character.frameGeometry())
             self.chat.reveal()
@@ -332,6 +336,7 @@ class Companion(QObject):
 
         self.last_answer = ""
         self.last_summary = ""
+        self._greeted = False
         self._markup_seen = False
         self._answer_parts = []
         self._markup_seen = False
@@ -446,6 +451,33 @@ class Companion(QObject):
             self.chat.move_by(delta)
         else:
             self.chat.move_near(self.character.frameGeometry())
+
+    # ---------------------------------------------------------------- greeting
+    def greet(self) -> None:
+        """Say hi when he first appears: proud pose, greeting in the bubble."""
+        if self._greeted or not self.config.get("startup.greeting", True):
+            return
+        if not self.character.isVisible() or self.machine.busy or self.worker is not None:
+            return
+        lines = self.config.get("startup.greeting_lines", []) or ["haiii ♡"]
+        if not isinstance(lines, (list, tuple)) or not lines:
+            lines = ["haiii ♡"]
+        self._greeted = True
+        line = random.choice([str(entry) for entry in lines])
+        hold = int(self.config.get("startup.greeting_hold_ms", 2600))
+        wanted = str(self.config.get("startup.greeting_state", "proud")).lower()
+        state = {"proud": State.PROUD, "finished": State.FINISHED,
+                 "talking": State.TALKING}.get(wanted, State.PROUD)
+        self.machine.set_state(state)
+        self._show_bubble(line, hold + 1400)
+        QTimer.singleShot(hold, self._end_greeting)
+
+    def _end_greeting(self) -> None:
+        """After the hello, relax back to waiting for input."""
+        if self.machine.busy or self.worker is not None:
+            return
+        if self.machine.state in (State.PROUD, State.FINISHED):
+            self.machine.user_active()
 
     def _on_files_dropped(self, paths: list) -> None:
         """A file landed on him: open the box and attach it."""
@@ -685,6 +717,7 @@ class Companion(QObject):
         self.history.clear()
         self.last_answer = ""
         self.last_summary = ""
+        self._greeted = False
         self._markup_seen = False
         self._answer_parts = []
         self.bubble.dismiss()

@@ -29,6 +29,12 @@ the actual answer, command or fix, and the persona never pads a short answer int
 a long one. Never explicit, just affectionate. His whole voice lives in one
 config string (`[prompt] system_prompt`), so you can rewrite him however you like.
 
+**He says hi when he shows up.** Launch him and he pops up proud with a
+greeting in his bubble — *"haiii daddy~ ♡"*, *"nya~ you're back! ♡"*, *"mrrp! hai
+hai~ ♡"* — then settles into LISTENING, waiting for you. Started hidden
+(autostart), he says it the first time you bring him up. Turn it off or change
+the lines in `[startup]`.
+
 **He is alive, not a sticker.** ![animation](docs/animation.gif)
 
 While nothing is happening he fidgets in short episodes — a blink, a slow
@@ -389,6 +395,9 @@ The settings most people touch:
 | `chat.pinned` | `false` | `false` = the box follows the character |
 | `chat.hide_on_focus_loss` | `true` | close the box when you click elsewhere |
 | `chat.auto_hide_ms` | `45000` | close it after this long idle (0 = never) |
+| `startup.greeting` | `true` | say hi when he appears |
+| `startup.greeting_lines` | 6 lines | what he says hello with |
+| `startup.greeting_hold_ms` | `2600` | how long he stays proud saying it |
 | `pet.enabled` | `true` | petting, blush and purr lines |
 | `pet.blush_ms` | `1500` | how long the blush lingers |
 | `pet.lines` | 24 lines | what he says when tapped |
@@ -498,7 +507,7 @@ How that is achieved, and what was deliberately avoided:
 Reproduce the numbers yourself:
 
 ```bash
-python3 scripts/selftest.py --visual     # 59 checks + screenshots of every state
+python3 scripts/selftest.py --visual     # 60 checks + screenshots of every state
 ```
 
 ## Platform notes
@@ -625,7 +634,7 @@ entry if you ever want it gone.
 ## Self test
 
 ```bash
-python3 scripts/selftest.py            # 59 checks against a local fake DeepSeek server
+python3 scripts/selftest.py            # 60 checks against a local fake DeepSeek server
 python3 scripts/selftest.py --visual   # + screenshots of all six states and a full lifecycle
 ```
 
